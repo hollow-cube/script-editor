@@ -1,4 +1,4 @@
-import { cn } from '@hollowcube/design-system/lib/utils'
+import { cn } from '../utils'
 
 type Swatch = { name: string; varName: string; foreground?: string }
 type SwatchRowProps = { label: string; swatches: Swatch[] }

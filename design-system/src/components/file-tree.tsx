@@ -1,6 +1,7 @@
-import { cn } from '@hollowcube/design-system/lib/utils'
 import { ChevronRightIcon, FileIcon, FolderIcon, FolderOpenIcon } from 'lucide-react'
 import * as React from 'react'
+
+import { cn } from '../utils'
 
 export type FileTreeNode =
     | { type: 'file'; name: string; id: string; icon?: React.ReactNode }

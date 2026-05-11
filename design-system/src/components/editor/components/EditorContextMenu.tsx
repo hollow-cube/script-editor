@@ -1,11 +1,12 @@
+import * as React from 'react'
+
 import {
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuSeparator,
     DropdownMenuShortcut,
-} from '@hollowcube/design-system/components/dropdown-menu'
-import * as React from 'react'
+} from '../../dropdown-menu'
 
 export type EditorContextMenuCommands = {
     onCut: () => void

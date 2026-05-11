@@ -1,8 +1,9 @@
 import { Dialog as DialogPrimitive } from '@base-ui/react/dialog'
-import { Button } from '@hollowcube/design-system/components/button'
-import { cn } from '@hollowcube/design-system/lib/utils'
 import { XIcon } from 'lucide-react'
 import * as React from 'react'
+
+import { cn } from '../utils'
+import { Button } from './button'
 
 function Dialog({ ...props }: DialogPrimitive.Root.Props) {
     return <DialogPrimitive.Root data-slot='dialog' {...props} />

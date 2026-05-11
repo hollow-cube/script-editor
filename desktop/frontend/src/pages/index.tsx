@@ -1,4 +1,4 @@
-import { Button } from '@hollowcube/design-system/components/button'
+import { Button } from '@hollowcube/design-system'
 import { useHotkey } from '@tanstack/react-hotkeys'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'

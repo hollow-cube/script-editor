@@ -2,7 +2,8 @@
 
 import { Toggle as TogglePrimitive } from '@base-ui/react/toggle'
 import { ToggleGroup as ToggleGroupPrimitive } from '@base-ui/react/toggle-group'
-import { cn } from '@hollowcube/design-system/lib/utils'
+
+import { cn } from '../utils'
 
 function ToggleGroup({
     className,

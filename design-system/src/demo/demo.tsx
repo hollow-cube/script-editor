@@ -1,75 +1,3 @@
-import { Badge } from '@hollowcube/design-system/components/badge'
-import { Banner } from '@hollowcube/design-system/components/banner'
-import {
-    Breadcrumb,
-    BreadcrumbItem,
-    BreadcrumbLink,
-    BreadcrumbList,
-    BreadcrumbPage,
-    BreadcrumbSeparator,
-} from '@hollowcube/design-system/components/breadcrumb'
-import { Button } from '@hollowcube/design-system/components/button'
-import { CircleProgress } from '@hollowcube/design-system/components/circle-progress'
-import { ColorSwatches } from '@hollowcube/design-system/components/color-swatches'
-import {
-    Command,
-    CommandEmpty,
-    CommandGroup,
-    CommandInput,
-    CommandItem,
-    CommandList,
-    CommandSeparator,
-    CommandShortcut,
-} from '@hollowcube/design-system/components/command'
-import {
-    DropdownMenu,
-    DropdownMenuCheckboxItem,
-    DropdownMenuContent,
-    DropdownMenuGroup,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuShortcut,
-    DropdownMenuSub,
-    DropdownMenuSubContent,
-    DropdownMenuSubTrigger,
-    DropdownMenuTrigger,
-} from '@hollowcube/design-system/components/dropdown-menu'
-import { FileTree, type FileTreeNode } from '@hollowcube/design-system/components/file-tree'
-import {
-    HoverCard,
-    HoverCardContent,
-    HoverCardTrigger,
-} from '@hollowcube/design-system/components/hover-card'
-import { Input } from '@hollowcube/design-system/components/input'
-import {
-    InputGroup,
-    InputGroupAddon,
-    InputGroupButton,
-    InputGroupInput,
-} from '@hollowcube/design-system/components/input-group'
-import { Label } from '@hollowcube/design-system/components/label'
-import { Progress } from '@hollowcube/design-system/components/progress'
-import {
-    Select,
-    SelectContent,
-    SelectGroup,
-    SelectItem,
-    SelectLabel,
-    SelectTrigger,
-    SelectValue,
-} from '@hollowcube/design-system/components/select'
-import { Separator } from '@hollowcube/design-system/components/separator'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@hollowcube/design-system/components/tabs'
-import { Textarea } from '@hollowcube/design-system/components/textarea'
-import { ToggleGroup, ToggleGroupItem } from '@hollowcube/design-system/components/toggle-group'
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipProvider,
-    TooltipTrigger,
-} from '@hollowcube/design-system/components/tooltip'
-import { cn } from '@hollowcube/design-system/lib/utils'
 import {
     CheckIcon,
     ChevronRightIcon,
@@ -97,6 +25,70 @@ import {
     XIcon,
 } from 'lucide-react'
 import * as React from 'react'
+
+import { Badge } from '../components/badge'
+import { Banner } from '../components/banner'
+import {
+    Breadcrumb,
+    BreadcrumbItem,
+    BreadcrumbLink,
+    BreadcrumbList,
+    BreadcrumbPage,
+    BreadcrumbSeparator,
+} from '../components/breadcrumb'
+import { Button } from '../components/button'
+import { CircleProgress } from '../components/circle-progress'
+import {
+    Command,
+    CommandEmpty,
+    CommandGroup,
+    CommandInput,
+    CommandItem,
+    CommandList,
+    CommandSeparator,
+    CommandShortcut,
+} from '../components/command'
+import {
+    DropdownMenu,
+    DropdownMenuCheckboxItem,
+    DropdownMenuContent,
+    DropdownMenuGroup,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuShortcut,
+    DropdownMenuSub,
+    DropdownMenuSubContent,
+    DropdownMenuSubTrigger,
+    DropdownMenuTrigger,
+} from '../components/dropdown-menu'
+import { FileTree, type FileTreeNode } from '../components/file-tree'
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '../components/hover-card'
+import { Input } from '../components/input'
+import {
+    InputGroup,
+    InputGroupAddon,
+    InputGroupButton,
+    InputGroupInput,
+} from '../components/input-group'
+import { Label } from '../components/label'
+import { Progress } from '../components/progress'
+import {
+    Select,
+    SelectContent,
+    SelectGroup,
+    SelectItem,
+    SelectLabel,
+    SelectTrigger,
+    SelectValue,
+} from '../components/select'
+import { Separator } from '../components/separator'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/tabs'
+import { Textarea } from '../components/textarea'
+import { ToggleGroup, ToggleGroupItem } from '../components/toggle-group'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/tooltip'
+import { cn } from '../utils'
+import { ColorSwatches } from './color-swatches'
 
 function Section({
     title,
@@ -336,7 +328,7 @@ function InputsSection() {
                 </p>
                 <div
                     role='alert'
-                    className='absolute top-[calc(100%-1.25rem)] left-0 z-10 flex items-center gap-1.5 rounded-md bg-destructive px-2 py-1 text-[0.7rem] leading-none text-destructive-foreground shadow-lg ring-1 ring-destructive/40'
+                    className='absolute top-[calc(100%-1.1rem)] left-0 z-10 flex items-center gap-1.5 rounded-md bg-destructive px-2 py-1 text-[0.7rem] leading-none text-destructive-foreground shadow-lg ring-1 ring-destructive/40'
                 >
                     <ShieldAlertIcon className='size-3' />
                     Enter a valid email address.

@@ -1,6 +1,6 @@
 import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable'
-import { cn } from '@hollowcube/design-system/lib/utils'
+import { cn } from '@hollowcube/design-system'
 import { Group, Panel, Separator } from 'react-resizable-panels'
 
 import { ResizeHandle } from './ResizeHandle'
@@ -10,6 +10,10 @@ import { type EditorGroupNode, type TabRenderer } from './types'
 type EditorGroupProps = {
     node: EditorGroupNode
     activeDragKind: 'tool' | 'editor' | null
+    /** Owning pane id (`editor:<leafId>` or `tool:<dock>`) the current drag is
+     *  hovering, set at the Workspace level so leaves can show the drop ring
+     *  regardless of which inner droppable is hit. */
+    hoveredPaneId: string | null
     renderTab: TabRenderer
     onActivate: (leafId: string, tabId: string) => void
     onClose: (leafId: string, tabId: string) => void
@@ -42,7 +46,7 @@ function SplitNode({
                     onSplitResize(node.id, [a, b])
                 }
             }}
-            className='flex h-full w-full gap-1'
+            className='flex h-full w-full'
             style={{ display: 'flex' }}
         >
             <Panel id={childAId} defaultSize={node.sizes[0]} minSize={10}>
@@ -61,6 +65,7 @@ function SplitNode({
 function LeafNode({
     node,
     activeDragKind,
+    hoveredPaneId,
     renderTab,
     onActivate,
     onClose,
@@ -73,6 +78,7 @@ function LeafNode({
     })
 
     const showEdges = activeDragKind === 'editor'
+    const highlightDrop = activeDragKind === 'editor' && hoveredPaneId === paneId
 
     const activeTab = node.tabs.find((t) => t.id === node.activeId) ?? node.tabs[0]
     const tabIds = node.tabs.map((t) => t.id)
@@ -81,7 +87,8 @@ function LeafNode({
         <div
             ref={tabsDroppable.setNodeRef}
             className={cn(
-                'relative flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-md border border-border bg-card',
+                'relative flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-md bg-surface',
+                highlightDrop && 'ring-primary ring-2 ring-inset',
             )}
             data-slot='workspace-editor-leaf'
             data-leaf-id={node.id}

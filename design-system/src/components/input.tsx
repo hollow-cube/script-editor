@@ -1,6 +1,7 @@
 import { Input as InputPrimitive } from '@base-ui/react/input'
-import { cn } from '@hollowcube/design-system/lib/utils'
 import * as React from 'react'
+
+import { cn } from '../utils'
 
 function Input({ className, type, ...props }: React.ComponentProps<'input'>) {
     return (

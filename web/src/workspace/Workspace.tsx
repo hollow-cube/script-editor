@@ -6,11 +6,12 @@ import {
     useSensor,
     useSensors,
     type DragEndEvent,
+    type DragOverEvent,
     type DragStartEvent,
 } from '@dnd-kit/core'
-import { cn } from '@hollowcube/design-system/lib/utils'
+import { cn } from '@hollowcube/design-system'
 import * as React from 'react'
-import { Group, Panel, type PanelImperativeHandle, Separator } from 'react-resizable-panels'
+import { Group, Panel, Separator } from 'react-resizable-panels'
 
 import { EditorGroup } from './EditorGroup'
 import { ResizeHandle } from './ResizeHandle'
@@ -40,6 +41,10 @@ type ActiveDrag = {
 export function Workspace({ useStore, renderTab, className }: WorkspaceProps) {
     const state = useStore()
     const [activeDrag, setActiveDrag] = React.useState<ActiveDrag | null>(null)
+    // Pane id currently under the dragged tab. "tool:left", "editor:<leafId>"
+    // — derived from the dnd-kit over target so the ring shows for the OWNING
+    // pane no matter which interior droppable (tab, content, body) is hovered.
+    const [hoveredPaneId, setHoveredPaneId] = React.useState<string | null>(null)
 
     const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }))
 
@@ -74,11 +79,49 @@ export function Workspace({ useStore, renderTab, className }: WorkspaceProps) {
         })
     }
 
-    const onDragCancel = () => setActiveDrag(null)
+    const onDragCancel = () => {
+        setActiveDrag(null)
+        setHoveredPaneId(null)
+    }
+
+    const onDragOver = (event: DragOverEvent) => {
+        if (!event.over) {
+            setHoveredPaneId(null)
+            return
+        }
+        const overId = String(event.over.id)
+        const overData = event.over.data.current as
+            | { kind?: string; dockId?: DockId; leafId?: string; tabId?: string }
+            | undefined
+        // tab id → resolve via locator
+        if (overData?.kind === 'tab') {
+            const loc = locateTab(state, overId)
+            if (!loc) return
+            setHoveredPaneId(
+                loc.locator.kind === 'tool'
+                    ? `tool:${loc.locator.dock}`
+                    : `editor:${loc.locator.leafId}`,
+            )
+            return
+        }
+        if (overData?.kind === 'tool-dock' && overData.dockId) {
+            setHoveredPaneId(`tool:${overData.dockId}`)
+            return
+        }
+        if (
+            (overData?.kind === 'editor-leaf' || overData?.kind === 'split-edge') &&
+            overData.leafId
+        ) {
+            setHoveredPaneId(`editor:${overData.leafId}`)
+            return
+        }
+        setHoveredPaneId(null)
+    }
 
     const onDragEnd = (event: DragEndEvent) => {
         const drag = activeDrag
         setActiveDrag(null)
+        setHoveredPaneId(null)
         if (!drag || !event.over) return
         const overId = String(event.over.id)
         const overData = event.over.data.current as
@@ -159,6 +202,7 @@ export function Workspace({ useStore, renderTab, className }: WorkspaceProps) {
             sensors={sensors}
             collisionDetection={closestCenter}
             onDragStart={onDragStart}
+            onDragOver={onDragOver}
             onDragEnd={onDragEnd}
             onDragCancel={onDragCancel}
         >
@@ -171,10 +215,11 @@ export function Workspace({ useStore, renderTab, className }: WorkspaceProps) {
                 data-slot='workspace'
             >
                 <Toolbar state={state} onToggleDock={onToggleDock} />
-                <div className='min-h-0 flex-1 p-1'>
+                <div className='min-h-0 flex-1 px-2 pb-2'>
                     <ShellLayout
                         state={state}
                         activeDragKind={activeDrag?.sourceKind ?? null}
+                        hoveredPaneId={hoveredPaneId}
                         renderTab={renderTab}
                     />
                 </div>
@@ -194,91 +239,89 @@ export function Workspace({ useStore, renderTab, className }: WorkspaceProps) {
 type ShellLayoutProps = {
     state: WorkspaceStore
     activeDragKind: 'tool' | 'editor' | null
+    hoveredPaneId: string | null
     renderTab: TabRenderer
 }
 
-function ShellLayout({ state, activeDragKind, renderTab }: ShellLayoutProps) {
-    const leftRef = React.useRef<PanelImperativeHandle | null>(null)
-    const rightRef = React.useRef<PanelImperativeHandle | null>(null)
-    const bottomRef = React.useRef<PanelImperativeHandle | null>(null)
-
-    React.useEffect(() => {
-        const panel = leftRef.current
-        if (!panel) return
-        if (state.docksVisible.left) panel.resize(state.columnSizes[0])
-        else panel.collapse()
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [state.docksVisible.left])
-
-    React.useEffect(() => {
-        const panel = rightRef.current
-        if (!panel) return
-        if (state.docksVisible.right) panel.resize(state.columnSizes[2])
-        else panel.collapse()
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [state.docksVisible.right])
-
-    React.useEffect(() => {
-        const panel = bottomRef.current
-        if (!panel) return
-        if (state.docksVisible.bottom) panel.resize(state.middleSizes[1])
-        else panel.collapse()
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [state.docksVisible.bottom])
+function ShellLayout({ state, activeDragKind, hoveredPaneId, renderTab }: ShellLayoutProps) {
+    // Remember the last non-zero sizes (per dock) so the group's defaultSize
+    // restores roughly where the user left them when reopened.
+    const lastSize = React.useRef({
+        left: state.columnSizes[0] || 18,
+        right: state.columnSizes[2] || 18,
+        bottom: state.middleSizes[1] || 30,
+    })
 
     const onColumnsChanged = (layout: Record<string, number>) => {
-        const l = layout.left
-        const m = layout.middle
-        const r = layout.right
-        if (typeof l === 'number' && typeof m === 'number' && typeof r === 'number') {
-            state.setColumnSizes([l, m, r])
-        }
+        const l = layout.left ?? 0
+        const m = layout.middle ?? 100
+        const r = layout.right ?? 0
+        state.setColumnSizes([l, m, r])
+        if (l > 1) lastSize.current.left = l
+        if (r > 1) lastSize.current.right = r
     }
     const onMiddleChanged = (layout: Record<string, number>) => {
-        const c = layout.center
-        const b = layout.bottom
-        if (typeof c === 'number' && typeof b === 'number') {
-            state.setMiddleSizes([c, b])
-        }
+        const c = layout.center ?? 100
+        const b = layout.bottom ?? 0
+        state.setMiddleSizes([c, b])
+        if (b > 1) lastSize.current.bottom = b
     }
+
+    const { left: lVisible, right: rVisible, bottom: bVisible } = state.docksVisible
+    // Key forces a Group remount when the set of visible docks changes so the
+    // lib re-computes layout from defaultSize without us fighting its
+    // imperative API.
+    const columnsKey = `cols:${lVisible ? 1 : 0}:${rVisible ? 1 : 0}`
+    const middleKey = `middle:${bVisible ? 1 : 0}`
+
+    const leftSize = lVisible ? lastSize.current.left : 0
+    const rightSize = rVisible ? lastSize.current.right : 0
+    const middleSize = Math.max(20, 100 - leftSize - rightSize)
+    const bottomSize = bVisible ? lastSize.current.bottom : 0
+    const centerSize = Math.max(20, 100 - bottomSize)
 
     return (
         <Group
+            key={columnsKey}
             orientation='horizontal'
             onLayoutChanged={onColumnsChanged}
-            className='flex h-full w-full gap-1'
+            className='flex h-full w-full'
             style={{ display: 'flex' }}
         >
-            <Panel
-                id='left'
-                panelRef={leftRef}
-                defaultSize={state.columnSizes[0]}
-                minSize={10}
-                collapsible
-                collapsedSize={0}
-            >
-                <ToolDock
-                    dockId='left'
-                    state={state.left}
-                    renderTab={renderTab}
-                    onActivate={(id) => state.activateTab({ kind: 'tool', dock: 'left' }, id)}
-                    onClose={(id) => state.closeTab({ kind: 'tool', dock: 'left' }, id)}
-                />
-            </Panel>
-            <Separator>
-                <ResizeHandle orientation='horizontal' />
-            </Separator>
-            <Panel id='middle' defaultSize={state.columnSizes[1]} minSize={20}>
+            {lVisible ? (
+                <>
+                    <Panel id='left' defaultSize={leftSize} minSize={6}>
+                        <ToolDock
+                            dockId='left'
+                            state={state.left}
+                            renderTab={renderTab}
+                            highlightDrop={
+                                activeDragKind === 'tool' && hoveredPaneId === 'tool:left'
+                            }
+                            onActivate={(id) =>
+                                state.activateTab({ kind: 'tool', dock: 'left' }, id)
+                            }
+                            onClose={(id) => state.closeTab({ kind: 'tool', dock: 'left' }, id)}
+                        />
+                    </Panel>
+                    <Separator>
+                        <ResizeHandle orientation='horizontal' />
+                    </Separator>
+                </>
+            ) : null}
+            <Panel id='middle' defaultSize={middleSize} minSize={20}>
                 <Group
+                    key={middleKey}
                     orientation='vertical'
                     onLayoutChanged={onMiddleChanged}
-                    className='flex h-full w-full flex-col gap-1'
+                    className='flex h-full w-full flex-col'
                     style={{ display: 'flex' }}
                 >
-                    <Panel id='center' defaultSize={state.middleSizes[0]} minSize={20}>
+                    <Panel id='center' defaultSize={centerSize} minSize={20}>
                         <EditorGroup
                             node={state.center}
                             activeDragKind={activeDragKind}
+                            hoveredPaneId={hoveredPaneId}
                             renderTab={renderTab}
                             onActivate={(leafId, tabId) =>
                                 state.activateTab({ kind: 'editor', leafId }, tabId)
@@ -289,48 +332,52 @@ function ShellLayout({ state, activeDragKind, renderTab }: ShellLayoutProps) {
                             onSplitResize={state.setLeafSplitSizes}
                         />
                     </Panel>
-                    <Separator>
-                        <ResizeHandle orientation='vertical' />
-                    </Separator>
-                    <Panel
-                        id='bottom'
-                        panelRef={bottomRef}
-                        defaultSize={state.middleSizes[1]}
-                        minSize={10}
-                        collapsible
-                        collapsedSize={0}
-                    >
-                        <ToolDock
-                            dockId='bottom'
-                            state={state.bottom}
-                            renderTab={renderTab}
-                            onActivate={(id) =>
-                                state.activateTab({ kind: 'tool', dock: 'bottom' }, id)
-                            }
-                            onClose={(id) => state.closeTab({ kind: 'tool', dock: 'bottom' }, id)}
-                        />
-                    </Panel>
+                    {bVisible ? (
+                        <>
+                            <Separator>
+                                <ResizeHandle orientation='vertical' />
+                            </Separator>
+                            <Panel id='bottom' defaultSize={bottomSize} minSize={6}>
+                                <ToolDock
+                                    dockId='bottom'
+                                    state={state.bottom}
+                                    renderTab={renderTab}
+                                    highlightDrop={
+                                        activeDragKind === 'tool' && hoveredPaneId === 'tool:bottom'
+                                    }
+                                    onActivate={(id) =>
+                                        state.activateTab({ kind: 'tool', dock: 'bottom' }, id)
+                                    }
+                                    onClose={(id) =>
+                                        state.closeTab({ kind: 'tool', dock: 'bottom' }, id)
+                                    }
+                                />
+                            </Panel>
+                        </>
+                    ) : null}
                 </Group>
             </Panel>
-            <Separator>
-                <ResizeHandle orientation='horizontal' />
-            </Separator>
-            <Panel
-                id='right'
-                panelRef={rightRef}
-                defaultSize={state.columnSizes[2]}
-                minSize={10}
-                collapsible
-                collapsedSize={0}
-            >
-                <ToolDock
-                    dockId='right'
-                    state={state.right}
-                    renderTab={renderTab}
-                    onActivate={(id) => state.activateTab({ kind: 'tool', dock: 'right' }, id)}
-                    onClose={(id) => state.closeTab({ kind: 'tool', dock: 'right' }, id)}
-                />
-            </Panel>
+            {rVisible ? (
+                <>
+                    <Separator>
+                        <ResizeHandle orientation='horizontal' />
+                    </Separator>
+                    <Panel id='right' defaultSize={rightSize} minSize={6}>
+                        <ToolDock
+                            dockId='right'
+                            state={state.right}
+                            renderTab={renderTab}
+                            highlightDrop={
+                                activeDragKind === 'tool' && hoveredPaneId === 'tool:right'
+                            }
+                            onActivate={(id) =>
+                                state.activateTab({ kind: 'tool', dock: 'right' }, id)
+                            }
+                            onClose={(id) => state.closeTab({ kind: 'tool', dock: 'right' }, id)}
+                        />
+                    </Panel>
+                </>
+            ) : null}
         </Group>
     )
 }
@@ -343,7 +390,7 @@ function Toolbar({
     onToggleDock: (dock: DockId) => void
 }) {
     return (
-        <div className='border-border bg-surface flex items-center gap-2 border-b px-3 py-1.5'>
+        <div className='flex items-center gap-2 px-2 py-2'>
             <ToggleButton
                 active={state.docksVisible.left}
                 onClick={() => onToggleDock('left')}

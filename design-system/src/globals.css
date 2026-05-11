@@ -5,7 +5,7 @@
 
 @font-face {
     font-family: 'JetBrains Sans';
-    src: url('../fonts/JetBrainsSans.woff2') format('woff2');
+    src: url('./fonts/JetBrainsSans.woff2') format('woff2');
     font-weight: 100 900;
     font-style: normal;
     font-display: swap;
@@ -134,11 +134,11 @@
     --surface-foreground: rgb(218 220 224);
     --card: rgb(37 38 42);
     --card-foreground: rgb(218 220 224);
-    --popover: rgb(37 38 42);
+    --popover: rgb(37 38 41);
     --popover-foreground: rgb(218 220 224);
     --primary: rgb(49 111 222);
     --primary-foreground: rgb(255 255 255);
-    --secondary: rgb(55 57 61);
+    --secondary: rgb(53 54 56);
     --secondary-foreground: rgb(218 220 224);
     --muted: rgb(39 41 43);
     --muted-foreground: rgb(140 142 148);

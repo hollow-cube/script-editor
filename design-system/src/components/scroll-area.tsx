@@ -1,8 +1,8 @@
 'use client'
 
 import { ScrollArea as ScrollAreaPrimitive } from '@base-ui/react/scroll-area'
-import { cn } from '@hollowcube/design-system/lib/utils'
-import * as React from 'react'
+
+import { cn } from '../utils'
 
 function ScrollArea({ className, children, ...props }: ScrollAreaPrimitive.Root.Props) {
     return (

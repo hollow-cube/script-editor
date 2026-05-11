@@ -1,15 +1,10 @@
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogHeader,
-    DialogTitle,
-} from '@hollowcube/design-system/components/dialog'
-import { InputGroup, InputGroupAddon } from '@hollowcube/design-system/components/input-group'
-import { cn } from '@hollowcube/design-system/lib/utils'
 import { Command as CommandPrimitive } from 'cmdk'
 import { SearchIcon, CheckIcon } from 'lucide-react'
 import * as React from 'react'
+
+import { cn } from '../utils'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from './dialog'
+import { InputGroup, InputGroupAddon } from './input-group'
 
 function Command({ className, ...props }: React.ComponentProps<typeof CommandPrimitive>) {
     return (

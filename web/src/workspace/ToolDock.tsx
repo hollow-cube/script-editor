@@ -1,6 +1,6 @@
 import { useDroppable } from '@dnd-kit/core'
 import { SortableContext, horizontalListSortingStrategy } from '@dnd-kit/sortable'
-import { cn } from '@hollowcube/design-system/lib/utils'
+import { cn } from '@hollowcube/design-system'
 
 import { TabBar } from './TabBar'
 import { type DockId, type TabRenderer, type ToolDockState } from './types'
@@ -9,13 +9,24 @@ type ToolDockProps = {
     dockId: DockId
     state: ToolDockState
     renderTab: TabRenderer
+    /** When true, render the primary-tinted drop ring on the pane. Driven by
+     *  the parent workspace via onDragOver so the ring stays on while any
+     *  inner droppable (tab, content) is hovered. */
+    highlightDrop?: boolean
     onActivate: (tabId: string) => void
     onClose: (tabId: string) => void
 }
 
-export function ToolDock({ dockId, state, renderTab, onActivate, onClose }: ToolDockProps) {
+export function ToolDock({
+    dockId,
+    state,
+    renderTab,
+    highlightDrop = false,
+    onActivate,
+    onClose,
+}: ToolDockProps) {
     const paneId = `tool:${dockId}`
-    const { setNodeRef, isOver } = useDroppable({
+    const { setNodeRef } = useDroppable({
         id: paneId,
         data: { kind: 'tool-dock' as const, dockId },
     })
@@ -27,8 +38,8 @@ export function ToolDock({ dockId, state, renderTab, onActivate, onClose }: Tool
         <div
             ref={setNodeRef}
             className={cn(
-                'border-border bg-card flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-md border',
-                isOver && 'ring-primary ring-2 ring-inset',
+                'bg-surface flex h-full min-h-0 w-full min-w-0 flex-col overflow-hidden rounded-md',
+                highlightDrop && 'ring-primary ring-2 ring-inset',
             )}
             data-slot='workspace-tool-dock'
             data-dock-id={dockId}

@@ -1,11 +1,12 @@
 'use client'
 
-import { Button } from '@hollowcube/design-system/components/button'
-import { Input } from '@hollowcube/design-system/components/input'
-import { Textarea } from '@hollowcube/design-system/components/textarea'
-import { cn } from '@hollowcube/design-system/lib/utils'
 import { cva, type VariantProps } from 'class-variance-authority'
 import * as React from 'react'
+
+import { cn } from '../utils'
+import { Button } from './button'
+import { Input } from './input'
+import { Textarea } from './textarea'
 
 function InputGroup({ className, ...props }: React.ComponentProps<'div'>) {
     return (

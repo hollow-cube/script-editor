@@ -1,5 +1,6 @@
 import { Progress as ProgressPrimitive } from '@base-ui/react/progress'
-import { cn } from '@hollowcube/design-system/lib/utils'
+
+import { cn } from '../utils'
 
 function Progress({ className, children, value, ...props }: ProgressPrimitive.Root.Props) {
     return (

@@ -1,5 +1,6 @@
-import { cn } from '@hollowcube/design-system/lib/utils'
 import * as React from 'react'
+
+import { cn } from '../utils'
 
 type CircleProgressProps = React.HTMLAttributes<HTMLDivElement> & {
     value: number

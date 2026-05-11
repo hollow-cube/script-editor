@@ -22,3 +22,5 @@ desktop/build/linux
 .vscode/*
 !.vscode/extensions.json
 !.vscode/settings.json
+
+.claude

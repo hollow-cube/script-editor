@@ -1,4 +1,4 @@
-import { Button } from '@hollowcube/design-system/components/button'
+import { Button } from '@hollowcube/design-system'
 import { useHotkey } from '@tanstack/react-hotkeys'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
@@ -44,13 +44,13 @@ export default function Home() {
                 <div className='flex flex-wrap gap-2'>
                     <Button onClick={increment}>Count: {count}</Button>
                     <Link to='/ds'>
-                        <Button variant='outline'>Design system →</Button>
+                        <Button variant='secondary'>Design system →</Button>
                     </Link>
                     <Link to='/editor'>
-                        <Button variant='outline'>Code editor →</Button>
+                        <Button variant='secondary'>Code editor →</Button>
                     </Link>
                     <Link to='/workspace'>
-                        <Button variant='outline'>Workspace →</Button>
+                        <Button variant='secondary'>Workspace →</Button>
                     </Link>
                 </div>
 

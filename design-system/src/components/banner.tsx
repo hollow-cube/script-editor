@@ -1,8 +1,9 @@
-import { Button } from '@hollowcube/design-system/components/button'
-import { cn } from '@hollowcube/design-system/lib/utils'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { XIcon } from 'lucide-react'
 import * as React from 'react'
+
+import { cn } from '../utils'
+import { Button } from './button'
 
 const bannerVariants = cva(
     'flex w-full items-start gap-3 rounded-lg border bg-clip-padding p-3 text-sm',

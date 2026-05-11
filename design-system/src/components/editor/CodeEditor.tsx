@@ -18,12 +18,17 @@ import {
 import { openSearchPanel, search } from '@codemirror/search'
 import { Compartment, EditorState } from '@codemirror/state'
 import { drawSelection, EditorView, keymap } from '@codemirror/view'
-import { cn } from '@hollowcube/design-system/lib/utils'
 import * as React from 'react'
 
+import { cn } from '../../utils'
 import { EditorContextMenu, type EditorContextMenuCommands } from './components/EditorContextMenu'
 import { UsagesPopup, type UsageMatch } from './components/UsagesPopup'
 import { activeLineHighlight } from './extensions/activeLine'
+import {
+    cmdHoverWord,
+    EDITOR_CMD_LINK_EVENT,
+    type EditorCmdLinkDetail,
+} from './extensions/cmdHoverWord'
 import { jsonCompletion } from './extensions/completion'
 import {
     editorContextMenuExtension,
@@ -32,8 +37,10 @@ import {
 } from './extensions/contextMenu'
 import { wideFoldGutter } from './extensions/foldGutter'
 import {
+    highlightLinesFacet,
     highlightRangesFacet,
     highlightRangesExtension,
+    type HighlightLine,
     type HighlightRange,
 } from './extensions/highlightRanges'
 import { editorHighlightStyle } from './extensions/highlightStyle'
@@ -41,31 +48,50 @@ import { iconGutterLineOffset, iconGutterMap, iconNumberGutter } from './extensi
 import { editorTheme } from './extensions/theme'
 import { armadaDark } from './themes'
 
-// Silence the unused warning while we keep the import in case the menu needs
-// access to the full default-keymap action.
 void copyLineDown
 
 export type CodeEditorProps = {
     value: string
     onChange?: (next: string) => void
-    /** Currently `'json'` only. Lookup table for more languages to follow. */
     language?: 'json'
     readOnly?: boolean
-    /** Map of (displayed) line number → raw HTML icon. When set, the icon
-     *  REPLACES the line number for that row. Keys are interpreted in the
-     *  same numbering as the visible gutter (i.e. after `lineOffset`). */
     gutterIcons?: Record<number, string>
-    /** Number added to the internal 1..N line numbering before display. Use
-     *  this when embedding a slice of a larger file so the gutter still shows
-     *  the original line numbers. */
     lineOffset?: number
-    /** Character ranges in `value` to render with a primary-tinted highlight.
-     *  Used for search hits, usages, and find-in-file results. */
     highlightRanges?: readonly HighlightRange[]
+    /** Lines (1-indexed in the rendered doc) to fill with a yellow band. */
+    highlightLines?: readonly HighlightLine[]
+    /** Imperatively center this line in the viewport on mount and whenever the
+     *  prop value changes. 1-indexed against the rendered doc (not source). */
+    scrollToLine?: number
+    /** If true, focusing the editor surfaces an onFocus callback the caller
+     *  can use to jump the parent editor + close popups. */
+    onFocus?: () => void
     /** Set to false for embedded snippets — disables completion, context menu,
-     *  usages popup. Defaults to true for full editors. */
+     *  usages popup, cmd-hover. Defaults to true for full editors. */
     enableInteractions?: boolean
+    /** Show the focused/blurred active-line tint. Defaults to
+     *  `enableInteractions` so embedded snippets are quiet by default. */
+    showActiveLine?: boolean
+    /** Compact "single line snippet" rendering — drops gutters, vertical
+     *  padding, and the active-line tint. Used for inline list-row snippets. */
+    singleLine?: boolean
+    /** Fires when the user presses pointer-down somewhere over the editor
+     *  content; receives the resolved document position. Used by embedded
+     *  snippets to jump-and-close the parent popup. */
+    onPosPointerDown?: (pos: number) => void
     className?: string
+}
+
+type UsagesState = {
+    open: boolean
+    token: string
+    matches: UsageMatch[]
+    /** Editor-relative anchor info for the inline popup. */
+    anchorTop: number
+    anchorHeight: number
+    /** Source range of the clicked occurrence (for stable highlight while open). */
+    sourceFrom: number
+    sourceTo: number
 }
 
 function CodeEditor({
@@ -76,9 +102,18 @@ function CodeEditor({
     gutterIcons,
     lineOffset = 0,
     highlightRanges,
+    highlightLines,
+    scrollToLine,
+    onFocus,
     enableInteractions = true,
+    showActiveLine,
+    singleLine = false,
+    onPosPointerDown,
     className,
 }: CodeEditorProps) {
+    // Active-line tint follows interactions by default; singleLine forces it
+    // off so list snippets stay quiet.
+    const activeLineOn = singleLine ? false : (showActiveLine ?? enableInteractions)
     const hostRef = React.useRef<HTMLDivElement | null>(null)
     const viewRef = React.useRef<EditorView | null>(null)
 
@@ -86,8 +121,8 @@ function CodeEditor({
     const iconsCompartmentRef = React.useRef(new Compartment())
     const lineOffsetCompartmentRef = React.useRef(new Compartment())
     const highlightCompartmentRef = React.useRef(new Compartment())
+    const linesCompartmentRef = React.useRef(new Compartment())
 
-    // Context menu + usages popup state — only used when interactions are on.
     const [ctxMenu, setCtxMenu] = React.useState<{
         open: boolean
         x: number
@@ -97,11 +132,15 @@ function CodeEditor({
         tokenTo: number | null
     }>({ open: false, x: 0, y: 0, token: null, tokenFrom: null, tokenTo: null })
 
-    const [usages, setUsages] = React.useState<{
-        open: boolean
-        token: string
-        matches: UsageMatch[]
-    }>({ open: false, token: '', matches: [] })
+    const [usages, setUsages] = React.useState<UsagesState>({
+        open: false,
+        token: '',
+        matches: [],
+        anchorTop: 0,
+        anchorHeight: 0,
+        sourceFrom: 0,
+        sourceTo: 0,
+    })
 
     const [flashMsg, setFlashMsg] = React.useState<string | null>(null)
 
@@ -118,15 +157,12 @@ function CodeEditor({
         const languageExt = language === 'json' ? json() : []
 
         const extensions = [
-            iconNumberGutter(),
-            wideFoldGutter(),
             history(),
             drawSelection(),
             indentOnInput(),
             bracketMatching(),
             syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
             languageExt,
-            activeLineHighlight(),
             highlightRangesExtension(),
             editorTheme(armadaDark),
             editorHighlightStyle(armadaDark),
@@ -135,11 +171,40 @@ function CodeEditor({
             iconsCompartmentRef.current.of(iconGutterMap.of(gutterIcons ?? {})),
             lineOffsetCompartmentRef.current.of(iconGutterLineOffset.of(lineOffset)),
             highlightCompartmentRef.current.of(highlightRangesFacet.of(highlightRanges ?? [])),
+            linesCompartmentRef.current.of(highlightLinesFacet.of(highlightLines ?? [])),
             updateListener,
         ]
 
+        if (!singleLine) {
+            extensions.unshift(iconNumberGutter(), wideFoldGutter())
+        }
+        if (activeLineOn) {
+            extensions.push(activeLineHighlight())
+        }
+        if (singleLine) {
+            extensions.push(
+                EditorView.theme({
+                    '.cm-content': { padding: '0' },
+                    '.cm-line': { padding: '0' },
+                    '.cm-scroller': { overflow: 'hidden' },
+                }),
+            )
+        }
+
         if (enableInteractions) {
-            extensions.push(jsonCompletion(), search(), editorContextMenuExtension)
+            extensions.push(jsonCompletion(), search(), editorContextMenuExtension, cmdHoverWord())
+        }
+
+        if (onPosPointerDown) {
+            extensions.push(
+                EditorView.domEventHandlers({
+                    mousedown(event, view) {
+                        const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
+                        if (pos !== null) onPosPointerDown(pos)
+                        return false
+                    },
+                }),
+            )
         }
 
         const state = EditorState.create({ doc: value, extensions })
@@ -151,16 +216,14 @@ function CodeEditor({
             viewRef.current = null
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [language, enableInteractions])
+    }, [language, enableInteractions, singleLine, activeLineOn])
 
     React.useEffect(() => {
         const view = viewRef.current
         if (!view) return
         const current = view.state.doc.toString()
         if (current === value) return
-        view.dispatch({
-            changes: { from: 0, to: current.length, insert: value },
-        })
+        view.dispatch({ changes: { from: 0, to: current.length, insert: value } })
     }, [value])
 
     React.useEffect(() => {
@@ -199,6 +262,41 @@ function CodeEditor({
         })
     }, [highlightRanges])
 
+    React.useEffect(() => {
+        const view = viewRef.current
+        if (!view) return
+        view.dispatch({
+            effects: linesCompartmentRef.current.reconfigure(
+                highlightLinesFacet.of(highlightLines ?? []),
+            ),
+        })
+    }, [highlightLines])
+
+    // Imperative scroll-to-line for embedded preview snippets.
+    React.useEffect(() => {
+        const view = viewRef.current
+        if (!view || !scrollToLine) return
+        // Wait one tick so the doc/highlights are in place.
+        const id = window.requestAnimationFrame(() => {
+            if (!view.state) return
+            if (scrollToLine < 1 || scrollToLine > view.state.doc.lines) return
+            const line = view.state.doc.line(scrollToLine)
+            view.dispatch({
+                effects: EditorView.scrollIntoView(line.from, { y: 'center' }),
+            })
+        })
+        return () => window.cancelAnimationFrame(id)
+    }, [scrollToLine, value])
+
+    // Surface focus to the parent (used by the snippet → jump-and-close flow).
+    React.useEffect(() => {
+        const view = viewRef.current
+        if (!view || !onFocus) return
+        const handler = () => onFocus()
+        view.contentDOM.addEventListener('focus', handler)
+        return () => view.contentDOM.removeEventListener('focus', handler)
+    }, [onFocus])
+
     // Bridge CM6 contextmenu events into React state.
     React.useEffect(() => {
         if (!enableInteractions) return
@@ -219,7 +317,6 @@ function CodeEditor({
         return () => host.removeEventListener(EDITOR_CONTEXT_MENU_EVENT, onEvent as EventListener)
     }, [enableInteractions])
 
-    // Auto-clear flash messages after a beat.
     React.useEffect(() => {
         if (!flashMsg) return
         const id = window.setTimeout(() => setFlashMsg(null), 1600)
@@ -233,7 +330,6 @@ function CodeEditor({
         const doc = view.state.doc.toString()
         const lines = doc.split('\n')
         const out: UsageMatch[] = []
-        // Walk lines to capture line/col + offsets in one pass.
         let cursor = 0
         for (let li = 0; li < lines.length; li++) {
             const line = lines[li] ?? ''
@@ -248,25 +344,51 @@ function CodeEditor({
                     col: idx + 1,
                     from: matchFrom,
                     to: matchTo,
-                    snippet: line.trim(),
+                    snippet: line,
                 })
                 from = idx + token.length
             }
-            cursor += line.length + 1 // +1 for the consumed newline
+            cursor += line.length + 1
         }
         return out
     }, [])
 
+    /** Open the inline usages popup anchored below the line that contains
+     *  `anchorPos`. If `anchorPos` is omitted the popup is anchored at the
+     *  current cursor's line. */
     const openUsages = React.useCallback(
-        (token: string | null) => {
+        (token: string | null, anchorPos?: number, sourceRange?: { from: number; to: number }) => {
             if (!token) return
             const matches = findAllUsages(token)
-            setUsages({ open: true, token, matches })
+            const view = viewRef.current
+            if (!view || !hostRef.current) return
+            const pos = typeof anchorPos === 'number' ? anchorPos : view.state.selection.main.from
+            const coords = view.coordsAtPos(pos)
+            const hostRect = hostRef.current.getBoundingClientRect()
+            let anchorTop = 0
+            let anchorHeight = 20
+            if (coords) {
+                anchorTop = coords.bottom - hostRect.top
+                anchorHeight = coords.bottom - coords.top
+            }
+            setUsages({
+                open: true,
+                token,
+                matches,
+                anchorTop,
+                anchorHeight,
+                sourceFrom: sourceRange?.from ?? pos,
+                sourceTo: sourceRange?.to ?? pos + token.length,
+            })
         },
         [findAllUsages],
     )
 
-    // Hotkey F7 = open usages for the current selection / token under cursor.
+    const closeUsages = React.useCallback(() => {
+        setUsages((s) => (s.open ? { ...s, open: false } : s))
+    }, [])
+
+    // Hotkey F7 = open usages for the current selection.
     React.useEffect(() => {
         if (!enableInteractions) return
         const host = hostRef.current
@@ -279,12 +401,98 @@ function CodeEditor({
             const selectedText = view.state.doc.sliceString(sel.from, sel.to)
             if (selectedText) {
                 e.preventDefault()
-                openUsages(selectedText)
+                openUsages(selectedText, sel.from, { from: sel.from, to: sel.to })
             }
         }
         host.addEventListener('keydown', onKey)
         return () => host.removeEventListener('keydown', onKey)
     }, [enableInteractions, openUsages])
+
+    // Listen for cmd/ctrl-click → find usages on the linked token.
+    React.useEffect(() => {
+        if (!enableInteractions) return
+        const host = hostRef.current
+        if (!host) return
+        const onLink = (ev: Event) => {
+            const detail = (ev as CustomEvent<EditorCmdLinkDetail>).detail
+            openUsages(detail.token, detail.anchorPos, { from: detail.from, to: detail.to })
+        }
+        host.addEventListener(EDITOR_CMD_LINK_EVENT, onLink as EventListener)
+        return () => host.removeEventListener(EDITOR_CMD_LINK_EVENT, onLink as EventListener)
+    }, [enableInteractions, openUsages])
+
+    // Dismiss the inline popup on user interaction with the source editor.
+    React.useEffect(() => {
+        if (!usages.open) return
+        const view = viewRef.current
+        if (!view) return
+
+        // Close on key press (typing) in the editor.
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                e.preventDefault()
+                closeUsages()
+                return
+            }
+            // Ignore pure-modifier presses
+            if (['Meta', 'Control', 'Shift', 'Alt'].includes(e.key)) return
+            closeUsages()
+        }
+        // Close when user clicks outside the popup but somewhere in the page.
+        const onPointerDown = (e: PointerEvent) => {
+            const popup = popupRef.current
+            const target = e.target as Node | null
+            if (popup && target && popup.contains(target)) return
+            closeUsages()
+        }
+        view.contentDOM.addEventListener('keydown', onKey)
+        window.addEventListener('pointerdown', onPointerDown, true)
+        return () => {
+            view.contentDOM.removeEventListener('keydown', onKey)
+            window.removeEventListener('pointerdown', onPointerDown, true)
+        }
+    }, [usages.open, closeUsages])
+
+    const popupRef = React.useRef<HTMLDivElement | null>(null)
+
+    const jumpToPos = React.useCallback(
+        (pos: number) => {
+            const view = viewRef.current
+            if (!view) return
+            view.dispatch({
+                selection: { anchor: pos },
+                effects: EditorView.scrollIntoView(pos, { y: 'center' }),
+            })
+            view.focus()
+            closeUsages()
+        },
+        [closeUsages],
+    )
+
+    // While the popup is open, the SOURCE editor shows a primary highlight on
+    // every match — including the one we clicked. Combine the consumer's
+    // ranges with our overlay so we don't trample them.
+    const effectiveHighlightRanges = React.useMemo<readonly HighlightRange[]>(() => {
+        const base = (highlightRanges ?? []) as HighlightRange[]
+        if (!usages.open) return base
+        const overlay: HighlightRange[] = usages.matches.map((m) => ({
+            from: m.from,
+            to: m.to,
+            kind: 'primary',
+        }))
+        return [...base, ...overlay]
+    }, [highlightRanges, usages.open, usages.matches])
+
+    // Push the effective highlights into the editor whenever they change.
+    React.useEffect(() => {
+        const view = viewRef.current
+        if (!view) return
+        view.dispatch({
+            effects: highlightCompartmentRef.current.reconfigure(
+                highlightRangesFacet.of(effectiveHighlightRanges),
+            ),
+        })
+    }, [effectiveHighlightRanges])
 
     const commands: EditorContextMenuCommands = React.useMemo(
         () => ({
@@ -298,7 +506,7 @@ function CodeEditor({
                 try {
                     await navigator.clipboard.writeText(text)
                 } catch {
-                    /* ignore — fall back to inserting nothing */
+                    /* ignore */
                 }
                 view.dispatch({ changes: { from: sel.from, to: sel.to, insert: '' } })
             },
@@ -332,7 +540,12 @@ function CodeEditor({
                 })
             },
             onFindUsages: () => {
-                openUsages(ctxMenu.token)
+                if (ctxMenu.token && ctxMenu.tokenFrom !== null && ctxMenu.tokenTo !== null) {
+                    openUsages(ctxMenu.token, ctxMenu.tokenFrom, {
+                        from: ctxMenu.tokenFrom,
+                        to: ctxMenu.tokenTo,
+                    })
+                }
             },
             onGoToDefinition: () => {
                 setFlashMsg('No definition available (mock — LSP not wired)')
@@ -344,9 +557,7 @@ function CodeEditor({
                 try {
                     const parsed = JSON.parse(doc) as unknown
                     const formatted = JSON.stringify(parsed, null, 4)
-                    view.dispatch({
-                        changes: { from: 0, to: doc.length, insert: formatted },
-                    })
+                    view.dispatch({ changes: { from: 0, to: doc.length, insert: formatted } })
                 } catch {
                     setFlashMsg('Format failed: invalid JSON')
                 }
@@ -364,11 +575,11 @@ function CodeEditor({
                 if (view) openSearchPanel(view)
             },
         }),
-        [ctxMenu.token, openUsages],
+        [ctxMenu.token, ctxMenu.tokenFrom, ctxMenu.tokenTo, openUsages],
     )
 
     return (
-        <div className={cn('relative h-full w-full overflow-hidden', className)}>
+        <div className={cn('relative h-full w-full overflow-hidden px-2', className)}>
             <div ref={hostRef} className='h-full w-full' />
             {enableInteractions ? (
                 <>
@@ -379,13 +590,18 @@ function CodeEditor({
                         y={ctxMenu.y}
                         commands={commands}
                     />
-                    <UsagesPopup
-                        open={usages.open}
-                        onClose={() => setUsages((s) => ({ ...s, open: false }))}
-                        token={usages.token}
-                        source={value}
-                        matches={usages.matches}
-                    />
+                    {usages.open ? (
+                        <UsagesPopup
+                            ref={popupRef}
+                            token={usages.token}
+                            source={value}
+                            matches={usages.matches}
+                            anchorTop={usages.anchorTop}
+                            anchorHeight={usages.anchorHeight}
+                            onClose={closeUsages}
+                            onJumpToPos={jumpToPos}
+                        />
+                    ) : null}
                     {flashMsg ? (
                         <div className='pointer-events-none absolute right-4 bottom-4 rounded-md border border-border bg-popover px-3 py-1.5 text-xs text-popover-foreground shadow-md'>
                             {flashMsg}

@@ -5,11 +5,53 @@ import {
     BreadcrumbList,
     BreadcrumbPage,
     BreadcrumbSeparator,
-} from '@hollowcube/design-system/components/breadcrumb'
-import { CodeEditor } from '@hollowcube/design-system/editor'
-import samplePackage from '@hollowcube/design-system/editor/sample.json'
+    CodeEditor,
+} from '@hollowcube/design-system'
 
-const SAMPLE_TEXT = JSON.stringify(samplePackage, null, 4)
+export const SAMPLE_TEXT = JSON.stringify(
+    {
+        name: '@hollowcube/editor',
+        version: '0.1.0',
+        private: true,
+        type: 'module',
+        scripts: {
+            start: 'vite',
+            build: 'tsc -b && vite build',
+            preview: 'vite preview',
+            test: 'bun test',
+        },
+        dependencies: {
+            '@codemirror/state': '^6.6.0',
+            '@codemirror/view': '^6.42.1',
+            '@codemirror/language': '^6.12.3',
+            '@codemirror/lang-json': '^6.0.2',
+            react: '^19.2.4',
+            'react-dom': '^19.2.4',
+        },
+        devDependencies: {
+            vite: '^7.3.2',
+            typescript: '^5.6.3',
+        },
+        engines: {
+            node: '>=20',
+            bun: '>=1.3',
+        },
+        keywords: ['editor', 'codemirror', 'monorepo'],
+        metadata: {
+            createdAt: '2026-05-10',
+            owner: 'hollowcube',
+            tags: ['wip', 'internal'],
+            config: {
+                theme: 'armada-dark',
+                fontSize: 13,
+                lineHeight: 1.55,
+                tabSize: 4,
+            },
+        },
+    },
+    null,
+    4,
+)
 
 const PLAY_ICON = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="#10b981" stroke="#10b981" stroke-width="2" stroke-linejoin="round" aria-hidden="true">
   <polygon points="6 3 20 12 6 21 6 3"/>

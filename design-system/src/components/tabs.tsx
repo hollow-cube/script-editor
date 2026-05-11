@@ -1,7 +1,8 @@
 'use client'
 
 import { Tabs as TabsPrimitive } from '@base-ui/react/tabs'
-import { cn } from '@hollowcube/design-system/lib/utils'
+
+import { cn } from '../utils'
 
 function Tabs({ className, orientation = 'horizontal', ...props }: TabsPrimitive.Root.Props) {
     return (

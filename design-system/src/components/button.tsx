@@ -1,6 +1,7 @@
 import { Button as ButtonPrimitive } from '@base-ui/react/button'
-import { cn } from '@hollowcube/design-system/lib/utils'
 import { cva, type VariantProps } from 'class-variance-authority'
+
+import { cn } from '../utils'
 
 const buttonVariants = cva(
     "group/button inline-flex shrink-0 items-center justify-center rounded-md border border-transparent bg-clip-padding leading-none whitespace-nowrap transition-all outline-none select-none focus-visible:border-primary focus-visible:ring-3 focus-visible:ring-primary/30 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/30 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
@@ -12,7 +13,7 @@ const buttonVariants = cva(
                     'border-border bg-transparent text-foreground hover:bg-muted hover:text-foreground aria-expanded:bg-muted',
                 secondary:
                     'bg-secondary text-secondary-foreground hover:bg-secondary/80 aria-expanded:bg-secondary',
-                ghost: 'hover:bg-muted hover:text-foreground aria-expanded:bg-muted',
+                ghost: 'hover:bg-secondary hover:text-foreground aria-expanded:bg-muted',
                 destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
                 success: 'bg-success text-success-foreground hover:bg-success/90',
                 warning: 'bg-warning text-warning-foreground hover:bg-warning/90',

@@ -12,6 +12,8 @@ export function editorTheme(p: EditorPalette) {
                 fontSize: '13px',
                 height: '100%',
             },
+            // CodeMirror's default focused outline is a 1px dotted ring; suppress it.
+            '&.cm-focused': { outline: 'none' },
             '.cm-scroller': {
                 fontFamily: 'inherit',
                 lineHeight: '1.55',
@@ -21,10 +23,18 @@ export function editorTheme(p: EditorPalette) {
                 padding: '8px 0',
             },
             '.cm-cursor, .cm-dropCursor': { borderLeftColor: p.caret },
-            '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection':
+            // Synthetic selection layer: full-opacity primary band.
+            '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground':
                 {
-                    background: p.selectionBg,
+                    background: 'var(--primary)',
                 },
+            // Native selection on top of the layer: transparent background so we
+            // don't double-paint, white text so syntax colors give way to a
+            // legible high-contrast reading on the band.
+            '.cm-content ::selection': {
+                background: 'transparent',
+                color: '#ffffff',
+            },
             '&:not(.cm-focused) .cm-selectionBackground': {
                 background: p.selectionInactiveBg,
             },
@@ -32,19 +42,22 @@ export function editorTheme(p: EditorPalette) {
             // Gutters
             '.cm-gutters': {
                 backgroundColor: 'transparent',
-                color: p.gutterFg,
+                color: 'var(--foreground)',
                 border: 'none',
             },
             '.cm-gutterElement': {
                 padding: '0 6px 0 8px',
             },
             '.cm-lineNumbers .cm-gutterElement': {
-                color: p.gutterFg,
+                color: 'var(--foreground)',
                 minWidth: '2ch',
+            },
+            '.cm-iconNumberGutter .cm-gutterElement': {
+                color: 'var(--foreground)',
             },
             '.cm-activeLineGutter': {
                 backgroundColor: 'transparent',
-                color: p.gutterActiveFg,
+                color: 'var(--foreground)',
             },
 
             // Indent guides (if extension enabled later)

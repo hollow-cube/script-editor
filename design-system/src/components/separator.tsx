@@ -1,5 +1,6 @@
 import { Separator as SeparatorPrimitive } from '@base-ui/react/separator'
-import { cn } from '@hollowcube/design-system/lib/utils'
+
+import { cn } from '../utils'
 
 function Separator({ className, orientation = 'horizontal', ...props }: SeparatorPrimitive.Props) {
     return (

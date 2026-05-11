@@ -1,8 +1,8 @@
-import { cn } from '@hollowcube/design-system/lib/utils'
+import { cn } from '@hollowcube/design-system'
 
-// Invisible (per spec) but draggable resize handle that occupies a small gap.
-// react-resizable-panels wraps this in a `PanelResizeHandle` which provides the
-// pointer-event plumbing; this component only renders the visual hit-area.
+// Acts as both the visible gap (2 tailwind units = 8px) between panels AND
+// the resize hit-area. Transparent so the bg-background shows through, giving
+// every panel the appearance of floating on the dark page.
 export function ResizeHandle({ orientation }: { orientation: 'horizontal' | 'vertical' }) {
     return (
         <div
@@ -10,8 +10,8 @@ export function ResizeHandle({ orientation }: { orientation: 'horizontal' | 'ver
             className={cn(
                 'shrink-0 bg-transparent',
                 orientation === 'horizontal'
-                    ? 'h-full w-1 cursor-col-resize'
-                    : 'h-1 w-full cursor-row-resize',
+                    ? 'h-full w-2 cursor-col-resize'
+                    : 'h-2 w-full cursor-row-resize',
             )}
         />
     )

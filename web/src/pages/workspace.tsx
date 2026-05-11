@@ -1,4 +1,3 @@
-import { Badge } from '@hollowcube/design-system/components/badge'
 import {
     Breadcrumb,
     BreadcrumbItem,
@@ -6,16 +5,16 @@ import {
     BreadcrumbList,
     BreadcrumbPage,
     BreadcrumbSeparator,
-} from '@hollowcube/design-system/components/breadcrumb'
-import { FileTree, type FileTreeNode } from '@hollowcube/design-system/components/file-tree'
-import { Input } from '@hollowcube/design-system/components/input'
-import { CodeEditor } from '@hollowcube/design-system/editor'
-import samplePackage from '@hollowcube/design-system/editor/sample.json'
-import * as React from 'react'
+    Badge,
+    FileTree,
+    type FileTreeNode,
+    Input,
+    CodeEditor,
+} from '@hollowcube/design-system'
+import { Fragment, useState } from 'react'
 
 import { Workspace, createWorkspaceStore, type Tab, type WorkspaceState } from '../workspace'
-
-const SAMPLE_JSON = JSON.stringify(samplePackage, null, 4)
+import { SAMPLE_TEXT } from './editor'
 
 const README_TEXT = `# Hollowcube Editor
 
@@ -73,7 +72,7 @@ function renderTab(tab: Tab): React.ReactNode {
         case 'editor-json':
             return (
                 <CodeEditor
-                    value={typeof tab.payload?.value === 'string' ? tab.payload.value : SAMPLE_JSON}
+                    value={typeof tab.payload?.value === 'string' ? tab.payload.value : SAMPLE_TEXT}
                 />
             )
         case 'editor-text':
@@ -92,7 +91,7 @@ function renderTab(tab: Tab): React.ReactNode {
 }
 
 function FilesPane() {
-    const [selected, setSelected] = React.useState<string | null>(null)
+    const [selected, setSelected] = useState<string | null>(null)
     return (
         <div className='p-2'>
             <FileTree
@@ -184,10 +183,10 @@ function PropertiesPane() {
     return (
         <dl className='grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 p-3 text-[0.75rem]'>
             {rows.map(([k, v]) => (
-                <React.Fragment key={k}>
+                <Fragment key={k}>
                     <dt className='text-muted-foreground'>{k}</dt>
                     <dd className='font-mono'>{v}</dd>
-                </React.Fragment>
+                </Fragment>
             ))}
         </dl>
     )
@@ -238,7 +237,7 @@ const useWorkspaceStore = createWorkspaceStore({
 export default function WorkspacePage() {
     return (
         <div className='flex h-svh w-full flex-col bg-background'>
-            <header className='flex flex-col gap-1 border-b border-border bg-surface px-6 py-3'>
+            <header className='flex flex-col gap-1 bg-background px-6 py-3'>
                 <Breadcrumb>
                     <BreadcrumbList>
                         <BreadcrumbItem>
