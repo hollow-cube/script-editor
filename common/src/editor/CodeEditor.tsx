@@ -6,7 +6,6 @@ import {
     historyKeymap,
     indentWithTab,
 } from '@codemirror/commands'
-import { json } from '@codemirror/lang-json'
 import {
     bracketMatching,
     defaultHighlightStyle,
@@ -17,7 +16,7 @@ import {
     unfoldAll,
 } from '@codemirror/language'
 import { openSearchPanel, search } from '@codemirror/search'
-import { Compartment, EditorState } from '@codemirror/state'
+import { Compartment, EditorState, type Extension } from '@codemirror/state'
 import { drawSelection, EditorView, keymap } from '@codemirror/view'
 
 import { cn } from '@hollowcube/design-system'
@@ -31,7 +30,6 @@ import {
     EDITOR_CMD_LINK_EVENT,
     type EditorCmdLinkDetail,
 } from './extensions/cmdHoverWord'
-import { jsonCompletion } from './extensions/completion'
 import {
     editorContextMenuExtension,
     EDITOR_CONTEXT_MENU_EVENT,
@@ -48,6 +46,7 @@ import {
 import { editorHighlightStyle } from './extensions/highlightStyle'
 import { iconGutterLineOffset, iconGutterMap, iconNumberGutter } from './extensions/iconGutter'
 import { editorTheme } from './extensions/theme'
+import { type LanguageDefinition } from './languages'
 import { armadaDark } from './themes'
 
 void copyLineDown
@@ -55,7 +54,12 @@ void copyLineDown
 export type CodeEditorProps = {
     value: string
     onChange?: (next: string) => void
-    language?: 'json'
+    /** Language definition driving syntax highlighting and the formatter. */
+    language?: LanguageDefinition
+    /** Extra CodeMirror extensions injected at construction time. Used to
+     *  layer LSP-driven features (diagnostics, hover, completion, etc.) on
+     *  top of the language's basic highlighting. */
+    extraExtensions?: readonly Extension[]
     readOnly?: boolean
     gutterIcons?: Record<number, string>
     lineOffset?: number
@@ -71,8 +75,8 @@ export type CodeEditorProps = {
     /** Fires when the editor's contentDOM loses focus. Used by the host shell
      *  to auto-save dirty editor tabs when the user clicks away. */
     onBlur?: () => void
-    /** Set to false for embedded snippets — disables completion, context menu,
-     *  usages popup, cmd-hover. Defaults to true for full editors. */
+    /** Set to false for embedded snippets — disables context menu, usages
+     *  popup, cmd-hover. Defaults to true for full editors. */
     enableInteractions?: boolean
     /** Show the focused/blurred active-line tint. Defaults to
      *  `enableInteractions` so embedded snippets are quiet by default. */
@@ -84,7 +88,36 @@ export type CodeEditorProps = {
      *  content; receives the resolved document position. Used by embedded
      *  snippets to jump-and-close the parent popup. */
     onPosPointerDown?: (pos: number) => void
+    /** When set, the context-menu "Go to definition" action calls this with
+     *  the current cursor position and the live editor view. The host
+     *  implements the language-specific resolution (LSP, etc.) and is
+     *  responsible for dispatching any in-file cursor move via the view. */
+    onGoToDefinitionAt?: (pos: number, view: EditorView) => void
+    /** When `true`, Cmd/Ctrl+click does NOT open the inline find-usages popup.
+     *  Use when an LSP definition extension is composed in via `extraExtensions`
+     *  so cmd+click resolves through the LSP instead. */
+    suppressCmdClickUsages?: boolean
+    /** When `true`, the default Lezer-syntax-tree fold gutter is omitted. Use
+     *  this when an LSP-driven fold gutter is added through `extraExtensions`
+     *  (the LSP's state-field-based gutter renders the same UI but actually
+     *  refreshes when LSP fold ranges arrive). */
+    suppressFoldGutter?: boolean
+    /** Imperative handle for opening the inline find-usages popup with a
+     *  pre-computed match set (LSP references). Use this when the host has
+     *  resolved matches via the LSP instead of the built-in string scan. */
+    apiRef?: React.RefObject<CodeEditorApi | null>
     className?: string
+}
+
+export type CodeEditorApi = {
+    /** Open the inline usages popup with caller-supplied matches. `token` is
+     *  used as the popup title; `anchorPos` controls the popup placement. */
+    showUsages: (
+        token: string,
+        matches: readonly UsageMatch[],
+        anchorPos: number,
+        sourceRange: { from: number; to: number },
+    ) => void
 }
 
 type UsagesState = {
@@ -102,7 +135,8 @@ type UsagesState = {
 function CodeEditor({
     value,
     onChange,
-    language = 'json',
+    language,
+    extraExtensions,
     readOnly = false,
     gutterIcons,
     lineOffset = 0,
@@ -115,6 +149,10 @@ function CodeEditor({
     showActiveLine,
     singleLine = false,
     onPosPointerDown,
+    onGoToDefinitionAt,
+    suppressCmdClickUsages = false,
+    suppressFoldGutter = false,
+    apiRef,
     className,
 }: CodeEditorProps) {
     // Active-line tint follows interactions by default; singleLine forces it
@@ -160,9 +198,9 @@ function CodeEditor({
             }
         })
 
-        const languageExt = language === 'json' ? json() : []
+        const languageExt = language?.cmExtension() ?? []
 
-        const extensions = [
+        const extensions: Extension[] = [
             history(),
             drawSelection(),
             indentOnInput(),
@@ -182,7 +220,8 @@ function CodeEditor({
         ]
 
         if (!singleLine) {
-            extensions.unshift(iconNumberGutter(), wideFoldGutter())
+            extensions.unshift(iconNumberGutter())
+            if (!suppressFoldGutter) extensions.unshift(wideFoldGutter())
         }
         if (activeLineOn) {
             extensions.push(activeLineHighlight())
@@ -198,7 +237,15 @@ function CodeEditor({
         }
 
         if (enableInteractions) {
-            extensions.push(jsonCompletion(), search(), editorContextMenuExtension, cmdHoverWord())
+            extensions.push(
+                search(),
+                editorContextMenuExtension,
+                cmdHoverWord({ suppressClick: suppressCmdClickUsages }),
+            )
+        }
+
+        if (extraExtensions && extraExtensions.length > 0) {
+            extensions.push(...extraExtensions)
         }
 
         if (onPosPointerDown) {
@@ -222,7 +269,15 @@ function CodeEditor({
             viewRef.current = null
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [language, enableInteractions, singleLine, activeLineOn])
+    }, [
+        language,
+        enableInteractions,
+        singleLine,
+        activeLineOn,
+        extraExtensions,
+        suppressCmdClickUsages,
+        suppressFoldGutter,
+    ])
 
     React.useEffect(() => {
         const view = viewRef.current
@@ -404,6 +459,45 @@ function CodeEditor({
         setUsages((s) => (s.open ? { ...s, open: false } : s))
     }, [])
 
+    /** Caller-driven variant of `openUsages` — takes a pre-computed match
+     *  set instead of grepping the document. Used by the LSP layer to feed
+     *  `textDocument/references` results into the popup. */
+    const openUsagesWithMatches = React.useCallback(
+        (
+            token: string,
+            matches: readonly UsageMatch[],
+            anchorPos: number,
+            sourceRange: { from: number; to: number },
+        ) => {
+            const view = viewRef.current
+            if (!view || !hostRef.current) return
+            const coords = view.coordsAtPos(anchorPos)
+            const hostRect = hostRef.current.getBoundingClientRect()
+            let anchorTop = 0
+            let anchorHeight = 20
+            if (coords) {
+                anchorTop = coords.bottom - hostRect.top
+                anchorHeight = coords.bottom - coords.top
+            }
+            setUsages({
+                open: true,
+                token,
+                matches: [...matches],
+                anchorTop,
+                anchorHeight,
+                sourceFrom: sourceRange.from,
+                sourceTo: sourceRange.to,
+            })
+        },
+        [],
+    )
+
+    React.useImperativeHandle(
+        apiRef as React.RefObject<CodeEditorApi | null> | undefined,
+        () => ({ showUsages: openUsagesWithMatches }),
+        [openUsagesWithMatches],
+    )
+
     // Hotkey F7 = open usages for the current selection.
     React.useEffect(() => {
         if (!enableInteractions) return
@@ -424,9 +518,12 @@ function CodeEditor({
         return () => host.removeEventListener('keydown', onKey)
     }, [enableInteractions, openUsages])
 
-    // Listen for cmd/ctrl-click → find usages on the linked token.
+    // Listen for cmd/ctrl-click → find usages on the linked token. Skipped
+    // when the host has an LSP definition extension composed in — in that
+    // case cmd+click resolves through the LSP, not the inline popup.
     React.useEffect(() => {
         if (!enableInteractions) return
+        if (suppressCmdClickUsages) return
         const host = hostRef.current
         if (!host) return
         const onLink = (ev: Event) => {
@@ -435,7 +532,7 @@ function CodeEditor({
         }
         host.addEventListener(EDITOR_CMD_LINK_EVENT, onLink as EventListener)
         return () => host.removeEventListener(EDITOR_CMD_LINK_EVENT, onLink as EventListener)
-    }, [enableInteractions, openUsages])
+    }, [enableInteractions, openUsages, suppressCmdClickUsages])
 
     // Dismiss the inline popup on user interaction with the source editor.
     React.useEffect(() => {
@@ -530,9 +627,7 @@ function CodeEditor({
             const sel = view.state.selection.main
             if (sel.empty) return
             try {
-                await navigator.clipboard.writeText(
-                    view.state.doc.sliceString(sel.from, sel.to),
-                )
+                await navigator.clipboard.writeText(view.state.doc.sliceString(sel.from, sel.to))
             } catch {
                 /* ignore */
             }
@@ -562,18 +657,31 @@ function CodeEditor({
             }
         }
         const goToDefinition = () => {
-            setFlashMsg('No definition available (mock — LSP not wired)')
+            const view = viewRef.current
+            if (!view) return
+            if (!onGoToDefinitionAt) {
+                setFlashMsg('Go to definition is not available for this language')
+                return
+            }
+            // Prefer the right-click token range when present (right-click sets
+            // tokenFrom); otherwise use the cursor head.
+            const pos = ctxMenu.tokenFrom ?? view.state.selection.main.head
+            onGoToDefinitionAt(pos, view)
         }
         const format = () => {
             const view = viewRef.current
             if (!view) return
+            const formatter = language?.formatter
+            if (!formatter) {
+                setFlashMsg('No formatter available for this language')
+                return
+            }
             const doc = view.state.doc.toString()
-            try {
-                const parsed = JSON.parse(doc) as unknown
-                const formatted = JSON.stringify(parsed, null, 4)
-                view.dispatch({ changes: { from: 0, to: doc.length, insert: formatted } })
-            } catch {
-                setFlashMsg('Format failed: invalid JSON')
+            const result = formatter(doc)
+            if (result.ok) {
+                view.dispatch({ changes: { from: 0, to: doc.length, insert: result.text } })
+            } else {
+                setFlashMsg(`Format failed: ${result.error}`)
             }
         }
         const doFoldAll = () => {
@@ -588,13 +696,29 @@ function CodeEditor({
             const view = viewRef.current
             if (view) openSearchPanel(view)
         }
-        const findUsagesTitle = ctxMenu.token
-            ? `Find usages of "${ctxMenu.token}"`
-            : 'Find usages'
+        const findUsagesTitle = ctxMenu.token ? `Find usages of "${ctxMenu.token}"` : 'Find usages'
         return [
-            { id: 'editor.cut', title: 'Cut', group: 'clipboard', keybinding: '$mod+x', run: () => void cutAction() },
-            { id: 'editor.copy', title: 'Copy', group: 'clipboard', keybinding: '$mod+c', run: () => void copyAction() },
-            { id: 'editor.paste', title: 'Paste', group: 'clipboard', keybinding: '$mod+v', run: () => void pasteAction() },
+            {
+                id: 'editor.cut',
+                title: 'Cut',
+                group: 'clipboard',
+                keybinding: '$mod+x',
+                run: () => void cutAction(),
+            },
+            {
+                id: 'editor.copy',
+                title: 'Copy',
+                group: 'clipboard',
+                keybinding: '$mod+c',
+                run: () => void copyAction(),
+            },
+            {
+                id: 'editor.paste',
+                title: 'Paste',
+                group: 'clipboard',
+                keybinding: '$mod+v',
+                run: () => void pasteAction(),
+            },
             {
                 id: 'editor.findUsages',
                 title: findUsagesTitle,
@@ -608,6 +732,7 @@ function CodeEditor({
                 title: 'Go to definition',
                 group: 'navigation',
                 keybinding: 'f12',
+                disabled: !onGoToDefinitionAt,
                 run: goToDefinition,
             },
             {
@@ -615,6 +740,7 @@ function CodeEditor({
                 title: 'Format document',
                 group: 'edit',
                 keybinding: 'alt+shift+f',
+                disabled: !language?.formatter,
                 run: format,
             },
             { id: 'editor.foldAll', title: 'Fold all', group: 'edit', run: doFoldAll },
@@ -627,7 +753,7 @@ function CodeEditor({
                 run: findInFile,
             },
         ]
-    }, [ctxMenu.token, ctxMenu.tokenFrom, ctxMenu.tokenTo, openUsages])
+    }, [ctxMenu.token, ctxMenu.tokenFrom, ctxMenu.tokenTo, openUsages, language, onGoToDefinitionAt])
 
     return (
         <div className={cn('relative h-full w-full overflow-hidden px-2', className)}>

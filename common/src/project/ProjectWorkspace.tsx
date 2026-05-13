@@ -3,6 +3,8 @@ import { useCallback, useMemo } from 'react'
 import { HCClient, HCClientProvider, useHCClient } from '@hollowcube/api'
 import { TooltipProvider } from '@hollowcube/design-system'
 
+import { LanguageProvider } from '../editor/languages'
+import { LuauLspProvider } from '../lsp'
 import {
     makeId,
     resolveTargetLeaf,
@@ -30,22 +32,30 @@ import { DockAddToolButton } from './DockAddToolButton'
 import { DockEmptyState } from './DockEmptyState'
 import { DocumentStoreProvider, useDocumentStore } from './documents'
 import { apiTestEditor } from './editors/api-test'
+import { docsEditor } from './editors/docs'
 import { TEXT_EDITOR_KIND, textEditor } from './editors/text'
 import { welcomeEditor } from './editors/welcome'
 import { createInitialWorkspaceState } from './initial-state'
+import { LspBufferBridge } from './LspBufferBridge'
 import { ProjectTopBar } from './ProjectTopBar'
 import { type AnyEditorDefinition, type ToolDefinition } from './registry'
 import { RegistryProvider, useTabRegistry, useTools } from './registry-context'
 import { SearchActions, SearchPopup } from './search'
 import { filesTool } from './tools/files'
+import { lspLogTool } from './tools/lsp-log'
 
 // The project id stays hardcoded until `/:projectId` routing lands. The
 // storage key encodes it, so per-project layout state is naturally isolated.
 const PROJECT_ID = 'demo'
 const STORAGE_KEY = `hc-project:${PROJECT_ID}:workspace-v2`
 
-const TOOLS: readonly ToolDefinition[] = [filesTool]
-const EDITORS: readonly AnyEditorDefinition[] = [welcomeEditor, apiTestEditor, textEditor]
+const TOOLS: readonly ToolDefinition[] = [filesTool, lspLogTool]
+const EDITORS: readonly AnyEditorDefinition[] = [
+    welcomeEditor,
+    apiTestEditor,
+    textEditor,
+    docsEditor,
+]
 
 export function ProjectWorkspace() {
     // Single HCClient for the workspace. Both web and desktop proxy `/v1` to
@@ -64,19 +74,24 @@ export function ProjectWorkspace() {
                 )}
             >
                 <RegistryProvider tools={TOOLS} editors={EDITORS}>
-                    <DocumentStoreProvider>
-                        <PendingFilesProvider>
-                            <ProjectEventsProvider projectId={PROJECT_ID}>
-                                <ActionRegistryProvider>
-                                    <TooltipProvider>
-                                        <ProjectGate>
-                                            <ProjectWorkspaceInner />
-                                        </ProjectGate>
-                                    </TooltipProvider>
-                                </ActionRegistryProvider>
-                            </ProjectEventsProvider>
-                        </PendingFilesProvider>
-                    </DocumentStoreProvider>
+                    <LanguageProvider>
+                        <DocumentStoreProvider>
+                            <PendingFilesProvider>
+                                <ProjectEventsProvider projectId={PROJECT_ID}>
+                                    <ActionRegistryProvider>
+                                        <TooltipProvider>
+                                            <ProjectGate>
+                                                <LuauLspProvider>
+                                                    <LspBufferBridge />
+                                                    <ProjectWorkspaceInner />
+                                                </LuauLspProvider>
+                                            </ProjectGate>
+                                        </TooltipProvider>
+                                    </ActionRegistryProvider>
+                                </ProjectEventsProvider>
+                            </PendingFilesProvider>
+                        </DocumentStoreProvider>
+                    </LanguageProvider>
                 </RegistryProvider>
             </ProjectLoader>
         </HCClientProvider>

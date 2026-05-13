@@ -26,11 +26,7 @@ export function ActionHotkeyBridge() {
             {actions
                 .filter((a) => a.keybinding)
                 .map((a) => (
-                    <HotkeyBinding
-                        key={a.id}
-                        action={a}
-                        getContextSnapshot={getContextSnapshot}
-                    />
+                    <HotkeyBinding key={a.id} action={a} getContextSnapshot={getContextSnapshot} />
                 ))}
         </>
     )

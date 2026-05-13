@@ -18,15 +18,16 @@ import {
     ScrollArea,
 } from '@hollowcube/design-system'
 
+import { listAllLanguageMimes, useLanguages } from '../../editor/languages'
+import { type WorkspaceStoreHook } from '../../workspace/context'
 import { useProjectActionsForStore } from '../actions/project-actions'
 import { useRunAction } from '../actions/registry'
-import { type WorkspaceStoreHook } from '../../workspace/context'
+import { isTextContentType } from '../tools/files-tree'
 import { useSearchStore } from './search-store'
 import { useActionResults } from './sources/actions'
 import { useFileResults } from './sources/files'
 import { useTextSearchResults } from './sources/text'
 import { SEARCH_TABS, type ResultGroup, type SearchResult, type SearchTab } from './types'
-import { isTextContentType } from '../tools/files-tree'
 
 // Top-center floating popup. Renders inside base-ui's Dialog so we inherit
 // focus trap, ESC, and outside-click handling — we override only the
@@ -330,7 +331,12 @@ function useResults(
     query: string,
 ): {
     groups: readonly ResultGroup[]
-    textState: { results: readonly SearchResult[]; loading: boolean; scanned: number; total: number }
+    textState: {
+        results: readonly SearchResult[]
+        loading: boolean
+        scanned: number
+        total: number
+    }
 } {
     const actions = useActionResults(query, tab === 'all' ? 5 : 50)
     const files = useFileResults(query, tab === 'all' ? 5 : 50)
@@ -398,6 +404,8 @@ function useActiveResult(items: readonly SearchResult[]) {
 function useInvoke(close: () => void, useStore: WorkspaceStoreHook) {
     const runAction = useRunAction()
     const { openEditor } = useProjectActionsForStore(useStore)
+    const languages = useLanguages()
+    const languageMimes = useMemo(() => listAllLanguageMimes(languages), [languages])
     return useCallback(
         (result: SearchResult) => {
             switch (result.kind) {
@@ -408,7 +416,7 @@ function useInvoke(close: () => void, useStore: WorkspaceStoreHook) {
                 }
                 case 'file': {
                     const file = result.data
-                    if (!isTextContentType(file.contentType)) {
+                    if (!isTextContentType(file.contentType, languageMimes)) {
                         close()
                         return
                     }
@@ -435,7 +443,7 @@ function useInvoke(close: () => void, useStore: WorkspaceStoreHook) {
                 }
             }
         },
-        [close, openEditor, runAction],
+        [close, openEditor, runAction, languageMimes],
     )
 }
 
@@ -452,8 +460,7 @@ function placeholderFor(tab: SearchTab): string {
     }
 }
 
-const IS_MAC =
-    typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform)
+const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform)
 
 function formatKeybinding(binding: string): string {
     // @tanstack/react-hotkeys uses `$mod` as the platform-cmd. Translate for

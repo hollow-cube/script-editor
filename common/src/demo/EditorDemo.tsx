@@ -7,7 +7,7 @@ import {
     BreadcrumbSeparator,
 } from '@hollowcube/design-system'
 
-import { CodeEditor } from '../editor'
+import { CodeEditor, jsonLanguage } from '../editor'
 
 export const SAMPLE_TEXT = JSON.stringify(
     {
@@ -112,7 +112,11 @@ export function EditorDemo() {
 
             <div className='flex min-h-0 flex-1 gap-4 overflow-hidden p-4'>
                 <div className='flex min-h-0 flex-1 flex-col gap-2 overflow-hidden rounded-md border border-border'>
-                    <CodeEditor value={SAMPLE_TEXT} gutterIcons={GUTTER_ICONS} />
+                    <CodeEditor
+                        value={SAMPLE_TEXT}
+                        language={jsonLanguage}
+                        gutterIcons={GUTTER_ICONS}
+                    />
                 </div>
 
                 <aside className='flex w-[320px] shrink-0 flex-col gap-4 overflow-y-auto'>
@@ -126,6 +130,7 @@ export function EditorDemo() {
                         <div className='h-44 overflow-hidden rounded-md border border-border'>
                             <CodeEditor
                                 value={RANGE_TEXT}
+                                language={jsonLanguage}
                                 readOnly
                                 lineOffset={RANGE_LINES_FROM - 1}
                                 highlightRanges={RANGE_HIGHLIGHTS}
@@ -144,6 +149,7 @@ export function EditorDemo() {
                         <div className='h-8 overflow-hidden rounded-md border border-border'>
                             <CodeEditor
                                 value={SINGLE_LINE}
+                                language={jsonLanguage}
                                 readOnly
                                 lineOffset={SINGLE_LINE_NO - 1}
                                 enableInteractions={false}

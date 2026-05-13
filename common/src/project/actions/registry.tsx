@@ -44,9 +44,7 @@ type ProviderProps = {
 }
 
 export function ActionRegistryProvider({ children, initialActions }: ProviderProps) {
-    const actionsRef = useRef<Map<string, Action>>(
-        new Map(initialActions?.map((a) => [a.id, a])),
-    )
+    const actionsRef = useRef<Map<string, Action>>(new Map(initialActions?.map((a) => [a.id, a])))
     const [version, setVersion] = useState(0)
     const bump = useCallback(() => setVersion((v) => v + 1), [])
 
@@ -80,9 +78,7 @@ export function ActionRegistryProvider({ children, initialActions }: ProviderPro
         [bump, version],
     )
 
-    return (
-        <ActionRegistryContext.Provider value={value}>{children}</ActionRegistryContext.Provider>
-    )
+    return <ActionRegistryContext.Provider value={value}>{children}</ActionRegistryContext.Provider>
 }
 
 function useActionRegistry(): ActionRegistryValue {

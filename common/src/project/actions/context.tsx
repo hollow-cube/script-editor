@@ -53,10 +53,7 @@ export function ActionContextProvider({
         ref.current = tags
     }, [tags])
 
-    const value = useMemo<ContextValue>(
-        () => ({ tags, getSnapshot: () => ref.current }),
-        [tags],
-    )
+    const value = useMemo<ContextValue>(() => ({ tags, getSnapshot: () => ref.current }), [tags])
 
     return <ActionContextContext.Provider value={value}>{children}</ActionContextContext.Provider>
 }
@@ -88,7 +85,12 @@ function focusedEditorKind(state: WorkspaceState): string | null {
 function findLeafFromState(state: WorkspaceState) {
     // Inline find rather than re-importing the helper to keep this file
     // depending only on types.
-    type Leaf = { kind: 'leaf'; id: string; tabs: { id: string; kind: string }[]; activeId: string | null }
+    type Leaf = {
+        kind: 'leaf'
+        id: string
+        tabs: { id: string; kind: string }[]
+        activeId: string | null
+    }
     const target = state.focusedLeafId
     if (!target) return null
     const stack = [state.center]
@@ -130,4 +132,3 @@ export function actionMatchesContext(
     }
     return true
 }
-

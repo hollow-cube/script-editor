@@ -5,12 +5,7 @@ export {
     type ActionRunContext,
     type ActionRunSource,
 } from './types'
-export {
-    ActionRegistryProvider,
-    useActions,
-    useRegisterAction,
-    useRunAction,
-} from './registry'
+export { ActionRegistryProvider, useActions, useRegisterAction, useRunAction } from './registry'
 export { ActionHotkeyBridge } from './hotkey-bridge'
 export {
     ActionContextProvider,

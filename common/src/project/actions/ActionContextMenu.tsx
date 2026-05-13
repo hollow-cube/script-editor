@@ -38,9 +38,8 @@ export type ActionContextMenuProps = {
     className?: string
 }
 
-const SHORTCUT_FORMAT = navigator?.platform && /Mac|iPod|iPhone|iPad/.test(navigator.platform)
-    ? 'mac'
-    : 'win'
+const SHORTCUT_FORMAT =
+    navigator?.platform && /Mac|iPod|iPhone|iPad/.test(navigator.platform) ? 'mac' : 'win'
 
 export function ActionContextMenu({
     open,
@@ -95,12 +94,7 @@ export function ActionContextMenu({
     if (!open) return null
     return (
         <DropdownMenu open={open} onOpenChange={onOpenChange}>
-            <DropdownMenuContent
-                anchor={anchor}
-                side='bottom'
-                align='start'
-                className={className}
-            >
+            <DropdownMenuContent anchor={anchor} side='bottom' align='start' className={className}>
                 {items.length > 0 ? (
                     items
                 ) : (

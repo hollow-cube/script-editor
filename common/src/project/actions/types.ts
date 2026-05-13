@@ -12,12 +12,7 @@
 
 import type { ReactNode } from 'react'
 
-export type ActionRunSource =
-    | 'palette'
-    | 'context-menu'
-    | 'hotkey'
-    | 'native-menu'
-    | 'programmatic'
+export type ActionRunSource = 'palette' | 'context-menu' | 'hotkey' | 'native-menu' | 'programmatic'
 
 export type ActionRunContext = {
     /** How the action was invoked. Mostly for telemetry / disambiguation. */

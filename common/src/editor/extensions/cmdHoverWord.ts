@@ -99,8 +99,17 @@ const modifierSubscriberPlugin = ViewPlugin.define((view) => {
     }
 })
 
-export function cmdHoverWord(): Extension {
+export type CmdHoverWordOptions = {
+    /** When true the cmd+click handler is skipped (no event dispatched, no
+     *  preempt) — the hover-underline still renders so users get visual
+     *  feedback that the modifier is recognized. Use this when a later
+     *  extension (e.g. LSP go-to-def) owns the click action. */
+    suppressClick?: boolean
+}
+
+export function cmdHoverWord(options: CmdHoverWordOptions = {}): Extension {
     installGlobalListeners()
+    const suppressClick = !!options.suppressClick
 
     return [
         linkRangeField,
@@ -129,6 +138,7 @@ export function cmdHoverWord(): Extension {
                 return false
             },
             mousedown(event, view) {
+                if (suppressClick) return false
                 const held = modifierHeld || event.metaKey || event.ctrlKey
                 if (!held) return false
                 if (event.button !== 0) return false

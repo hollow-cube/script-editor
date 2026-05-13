@@ -7,12 +7,27 @@ import {
 } from '@hollowcube/api'
 import { Button, Input, Label } from '@hollowcube/design-system'
 
-import { CodeEditor } from '../../editor/CodeEditor'
+import { CodeEditor, type CodeEditorApi, type UsageMatch } from '../../editor'
+import { useLanguageForMime } from '../../editor/languages'
+import {
+    fileUriFromPath,
+    lspExtensions,
+    LUAU_LANGUAGE_ID,
+    resolveUri,
+    runGotoDefinitionAtPos,
+    useDiagnosticCounts,
+    useLuauLsp,
+    type DiagnosticCounts,
+    type ReferenceMatch,
+    type ResolvedUri,
+} from '../../lsp'
 import { type Tab, useWorkspaceContext } from '../../workspace'
+import { useProjectActions } from '../actions'
 import { useProject } from '../context'
 import { usePendingFile, usePendingFilesStore } from '../data/pending-files'
 import { useDocument, useDocumentStore } from '../documents'
 import { type EditorDefinition } from '../registry'
+import { DOCS_EDITOR_KIND } from './docs'
 
 // Generic plain-text editor. Handles two payload shapes:
 //
@@ -61,7 +76,7 @@ function basename(path: string): string {
 // `parsePayload` narrows everything that flows through.
 export const textEditor: EditorDefinition = {
     kind: TEXT_EDITOR_KIND,
-    mimeTypes: ['text/*', 'application/json'],
+    mimeTypes: ['text/*', 'application/json', 'application/luau', 'text/x-luau'],
     parsePayload: (raw) => parseTextPayload(raw),
     titleFor: (payload) => titleFor(payload as TextEditorPayload),
     render: ({ tab, payload }) => <TextTab tab={tab} payload={payload as TextEditorPayload} />,
@@ -73,6 +88,9 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
     const documentStore = useDocumentStore()
     const pendingStore = usePendingFilesStore()
     const updateMutation = useV1ProjectFilesUpdate()
+    const luauLsp = useLuauLsp()
+    const { openEditor } = useProjectActions()
+    const editorApiRef = useRef<CodeEditorApi | null>(null)
 
     // Resolve the effective path: explicit `path` wins; otherwise look up the
     // pending entry which may have a path (right-click new) or none (untitled).
@@ -91,6 +109,141 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
     })
 
     const doc = useDocument(docId)
+
+    // Resolve the language. Prefer the path-based mime when the server's
+    // content-type is too coarse (text/plain) to pick a specific language —
+    // backends often return text/plain for `.luau` since there's no standard
+    // mime for it. Pending files have no server content-type, so the path
+    // fallback is the only signal.
+    const mimeFromServer = fileQuery.data?.contentType
+    const mimeFromPath = effectivePath ? mimeFromExtension(effectivePath) : undefined
+    const resolvedMime =
+        mimeFromPath && (!mimeFromServer || mimeFromServer === 'text/plain')
+            ? mimeFromPath
+            : (mimeFromServer ?? mimeFromPath)
+    const language = useLanguageForMime(resolvedMime)
+
+    // Extra extensions: when the file is Luau and the LSP is running, fold in
+    // the LSP-driven feature set keyed on the file's URI. didOpen/didChange/
+    // didClose are owned by LspBufferBridge — we only inject the read-side
+    // extensions here.
+    const knownPaths = useMemo(() => project.files.map((f) => f.path), [project.files])
+    const luauLspActive =
+        language?.id === LUAU_LANGUAGE_ID &&
+        !!luauLsp.client &&
+        luauLsp.status === 'running' &&
+        !!effectivePath
+
+    const definitionOpenHandler = useCallback(
+        (resolved: ResolvedUri) => {
+            if (resolved.kind === 'file') {
+                openEditor({
+                    kind: TEXT_EDITOR_KIND,
+                    payload: { path: resolved.path },
+                    identityKey: 'path',
+                })
+            } else if (resolved.kind === 'doc-module') {
+                openEditor({
+                    kind: DOCS_EDITOR_KIND,
+                    payload: { moduleId: resolved.module.alias, kind: 'library' },
+                    identityKey: 'moduleId',
+                })
+            } else if (resolved.kind === 'definition-file') {
+                openEditor({
+                    kind: DOCS_EDITOR_KIND,
+                    payload: { moduleId: resolved.file.alias, kind: 'definition-file' },
+                    identityKey: 'moduleId',
+                })
+            }
+        },
+        [openEditor],
+    )
+
+    const resolveTargetUri = useCallback(
+        (targetUri: string) => resolveUri(targetUri, knownPaths),
+        [knownPaths],
+    )
+
+    // Bridge LSP-supplied references into CodeEditor's existing find-usages
+    // popup. Fired when the user cmd-clicks a symbol's declaration —
+    // JetBrains-style "click-on-the-declaration shows usages" behavior.
+    const showReferences = useCallback(
+        (
+            matches: ReferenceMatch[],
+            anchorPos: number,
+            sourceRange: { from: number; to: number },
+        ) => {
+            const api = editorApiRef.current
+            if (!api) return
+            const usageMatches: UsageMatch[] = matches.map((m) => ({
+                line: m.line,
+                col: m.col,
+                from: m.from,
+                to: m.to,
+                snippet: m.snippet,
+            }))
+            // Title prefers the clicked source text so the popup header reads
+            // like a real symbol name. Falls back to a generic label.
+            const sourceText = (() => {
+                const doc = documentStore.getState().documents[docId]
+                if (!doc) return 'symbol'
+                return doc.current.slice(sourceRange.from, sourceRange.to) || 'symbol'
+            })()
+            api.showUsages(sourceText, usageMatches, anchorPos, sourceRange)
+        },
+        [docId, documentStore],
+    )
+
+    const extraExtensions = useMemo(() => {
+        if (!luauLspActive || !effectivePath || !luauLsp.client) return undefined
+        const uri = fileUriFromPath(effectivePath)
+        return lspExtensions({
+            client: luauLsp.client,
+            uri,
+            resolve: resolveTargetUri,
+            onDefinitionOpen: definitionOpenHandler,
+            onShowReferences: showReferences,
+        })
+    }, [
+        luauLspActive,
+        effectivePath,
+        luauLsp.client,
+        resolveTargetUri,
+        definitionOpenHandler,
+        showReferences,
+    ])
+
+    // Allow the right-click "Go to definition" action to dispatch through
+    // the same LSP machinery cmd+click uses. Passes `showReferences` so the
+    // click-on-the-declaration case surfaces usages instead of a no-op cursor
+    // move.
+    const goToDefinitionAt = useMemo(() => {
+        if (!luauLspActive || !effectivePath || !luauLsp.client) return undefined
+        const client = luauLsp.client
+        const uri = fileUriFromPath(effectivePath)
+        return (pos: number, view: import('@codemirror/view').EditorView) => {
+            void runGotoDefinitionAtPos(
+                view,
+                client,
+                uri,
+                pos,
+                resolveTargetUri,
+                definitionOpenHandler,
+                showReferences,
+            )
+        }
+    }, [
+        luauLspActive,
+        effectivePath,
+        luauLsp.client,
+        resolveTargetUri,
+        definitionOpenHandler,
+        showReferences,
+    ])
+
+    // Diagnostic counts for the badge in the editor pane's top-right.
+    const diagnosticUri = luauLspActive && effectivePath ? fileUriFromPath(effectivePath) : null
+    const diagnosticCounts = useDiagnosticCounts(luauLsp.client, diagnosticUri)
 
     // Open / close the document on mount / unmount. The document store
     // refcounts so multiple tabs of the same file share a single buffer.
@@ -234,15 +387,24 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
 
     return (
         <div className='relative flex h-full flex-col'>
-            <div className='min-h-0 flex-1'>
+            <div className='relative min-h-0 flex-1'>
                 <CodeEditor
                     value={doc.current}
                     onChange={setContent}
+                    language={language}
+                    extraExtensions={extraExtensions}
+                    onGoToDefinitionAt={goToDefinitionAt}
+                    suppressCmdClickUsages={luauLspActive}
+                    suppressFoldGutter={luauLspActive}
+                    apiRef={editorApiRef}
                     scrollToLine={initialScrollToLine}
                     onBlur={() => {
                         if (effectivePath) void save()
                     }}
                 />
+                {luauLspActive && diagnosticCounts.total > 0 ? (
+                    <DiagnosticBadge counts={diagnosticCounts} />
+                ) : null}
             </div>
             {saveError ? (
                 <div className='border-destructive/40 bg-destructive/10 text-destructive m-2 rounded-sm border px-2 py-1 text-xs'>
@@ -288,6 +450,62 @@ function Status({ children, tone }: { children: ReactNode; tone?: 'error' }) {
 function formatError(e: unknown): string {
     if (e instanceof Error) return e.message
     return String(e)
+}
+
+function DiagnosticBadge({ counts }: { counts: DiagnosticCounts }) {
+    return (
+        <div
+            className='border-border bg-popover text-popover-foreground pointer-events-none absolute right-3 top-2 flex items-center gap-1.5 rounded-md border px-2 py-1 text-[0.7rem] font-medium shadow-sm'
+            role='status'
+            aria-label={`${counts.total} diagnostics in this file`}
+        >
+            {counts.errors > 0 ? (
+                <span className='flex items-center gap-1'>
+                    <span
+                        className='h-1.5 w-1.5 rounded-full'
+                        style={{ background: 'var(--destructive)' }}
+                    />
+                    {counts.errors}
+                </span>
+            ) : null}
+            {counts.warnings > 0 ? (
+                <span className='flex items-center gap-1'>
+                    <span className='h-1.5 w-1.5 rounded-full bg-yellow-300' />
+                    {counts.warnings}
+                </span>
+            ) : null}
+            {counts.infos > 0 ? (
+                <span className='flex items-center gap-1'>
+                    <span className='h-1.5 w-1.5 rounded-full bg-sky-300' />
+                    {counts.infos}
+                </span>
+            ) : null}
+            {counts.hints > 0 ? (
+                <span className='text-muted-foreground flex items-center gap-1'>
+                    <span className='h-1.5 w-1.5 rounded-full bg-current' />
+                    {counts.hints}
+                </span>
+            ) : null}
+        </div>
+    )
+}
+
+// Best-effort mime sniffing from a filename. Covers the languages we register
+// in the LanguageRegistry; unknown extensions return `undefined` and the
+// editor falls back to plain text.
+function mimeFromExtension(path: string): string | undefined {
+    const dot = path.lastIndexOf('.')
+    if (dot === -1) return undefined
+    const ext = path.slice(dot).toLowerCase()
+    switch (ext) {
+        case '.json':
+            return 'application/json'
+        case '.luau':
+        case '.lua':
+            return 'application/luau'
+        default:
+            return undefined
+    }
 }
 
 function SavePathPrompt({

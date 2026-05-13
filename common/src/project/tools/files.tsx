@@ -11,6 +11,7 @@ import {
     ScrollArea,
 } from '@hollowcube/design-system'
 
+import { listAllLanguageMimes, useLanguages } from '../../editor/languages'
 import { ActionContextMenu, useProjectActions } from '../actions'
 import { type Action } from '../actions/types'
 import { useProject } from '../context'
@@ -44,6 +45,8 @@ function FilesPane() {
     const pendingStore = usePendingFilesStore()
     const { openEditor } = useProjectActions()
     const deleteMutation = useV1ProjectFilesDelete()
+    const languages = useLanguages()
+    const languageMimes = useMemo(() => listAllLanguageMimes(languages), [languages])
 
     const filesByPath = useMemo(() => {
         const map = new Map<string, ProjectFile>()
@@ -79,7 +82,7 @@ function FilesPane() {
             }
             const file = filesByPath.get(id)
             if (!file) return
-            if (!isTextContentType(file.contentType)) {
+            if (!isTextContentType(file.contentType, languageMimes)) {
                 setOpenError(`${file.path}: cannot open ${file.contentType} files`)
                 return
             }
@@ -90,7 +93,7 @@ function FilesPane() {
                 title: node.name,
             })
         },
-        [filesByPath, openEditor],
+        [filesByPath, openEditor, languageMimes],
     )
 
     const handleContext = useCallback((e: React.MouseEvent, node: FileTreeNode | null) => {

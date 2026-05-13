@@ -1,14 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-
-import {
-    useHCClient,
-    v1ProjectFilesGet,
-    type HCClient,
-    type ProjectFile,
-} from '@hollowcube/api'
 import { useQueryClient } from '@tanstack/react-query'
+
+import { useHCClient, v1ProjectFilesGet, type HCClient, type ProjectFile } from '@hollowcube/api'
 import { v1ProjectFilesGetKey } from '@hollowcube/api'
 
+import { listAllLanguageMimes, useLanguages } from '../../../editor/languages'
 import { useProject } from '../../context'
 import { isTextContentType } from '../../tools/files-tree'
 import { type SearchResult } from '../types'
@@ -51,6 +47,7 @@ export function useTextSearchResults(query: string): TextSearchState {
     const project = useProject()
     const client = useHCClient()
     const queryClient = useQueryClient()
+    const languages = useLanguages()
 
     const [state, setState] = useState<TextSearchState>({
         results: [],
@@ -71,7 +68,10 @@ export function useTextSearchResults(query: string): TextSearchState {
         const controller = new AbortController()
         abortRef.current = controller
 
-        const textFiles = project.files.filter((f) => isTextContentType(f.contentType))
+        const languageMimes = listAllLanguageMimes(languages)
+        const textFiles = project.files.filter((f) =>
+            isTextContentType(f.contentType, languageMimes),
+        )
         setState({ results: [], loading: true, scanned: 0, total: textFiles.length })
 
         const results: TextResult[] = []
@@ -100,9 +100,7 @@ export function useTextSearchResults(query: string): TextSearchState {
             if (controller.signal.aborted) return
             // Sort by score desc then by path so deterministic order is stable
             // across re-renders.
-            results.sort(
-                (a, b) => b.score - a.score || a.data.path.localeCompare(b.data.path),
-            )
+            results.sort((a, b) => b.score - a.score || a.data.path.localeCompare(b.data.path))
             setState({
                 results,
                 loading: false,
@@ -112,7 +110,7 @@ export function useTextSearchResults(query: string): TextSearchState {
         })
 
         return () => controller.abort()
-    }, [client, project.files, project.id, query, queryClient])
+    }, [client, project.files, project.id, query, queryClient, languages])
 
     return state
 }
@@ -172,7 +170,7 @@ function makeSnippet(
     const right = Math.min(lineEnd, matchIndex + matchLength + SNIPPET_WINDOW)
     const rawSnippet = text.slice(left, right)
     // Normalize whitespace to keep one-line snippets.
-    const snippet = rawSnippet.replace(/\s+/g, ' ').trim()
+    const snippet = rawSnippet.replaceAll(/\s+/g, ' ').trim()
     const localMatch = matchIndex - left
     const trimmedLead = rawSnippet.length - rawSnippet.replace(/^\s+/, '').length
     return {

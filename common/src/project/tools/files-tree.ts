@@ -87,11 +87,16 @@ function splitPath(path: string): string[] {
     return path.split('/').filter((s) => s.length > 0)
 }
 
-/** Decide whether a file is openable as text. Content types matched verbatim:
- *  anything starting with `text/`, plus `application/json`. */
-export function isTextContentType(contentType: string | undefined): boolean {
+/** Decide whether a file is openable as text. Anything starting with `text/`
+ *  is treated as text; additional non-`text/*` mimes (e.g. `application/json`,
+ *  `application/luau`) are accepted when the caller supplies them. The
+ *  language registry is the source of truth for the latter set. */
+export function isTextContentType(
+    contentType: string | undefined,
+    extraTextMimes?: readonly string[],
+): boolean {
     if (!contentType) return false
     if (contentType.startsWith('text/')) return true
-    if (contentType === 'application/json') return true
+    if (extraTextMimes && extraTextMimes.includes(contentType)) return true
     return false
 }

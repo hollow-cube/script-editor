@@ -30,6 +30,12 @@ export const armadaDark = {
     operator: '#d1d1d1',
     escape: '#82d2ce',
     invalid: '#ec5d6f',
+
+    // Diagnostics
+    diagnosticError: '#ec5d6f',
+    diagnosticWarning: '#ebc88d',
+    diagnosticInfo: '#82bfff',
+    diagnosticHint: '#909194',
 } as const
 
 export type EditorPalette = typeof armadaDark
