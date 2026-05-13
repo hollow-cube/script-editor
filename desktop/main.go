@@ -56,9 +56,17 @@ func main() {
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title: "Window 1",
 		Mac: application.MacWindow{
-			InvisibleTitleBarHeight: 50,
-			Backdrop:                application.MacBackdropTranslucent,
-			TitleBar:                application.MacTitleBarHiddenInset,
+			InvisibleTitleBarHeight: 38,
+			Backdrop:                application.MacBackdropLiquidGlass,
+			TitleBar: application.MacTitleBar{
+				AppearsTransparent:   true,
+				Hide:                 false,
+				HideTitle:            true,
+				FullSizeContent:      true,
+				UseToolbar:           true,
+				ToolbarStyle:         application.MacToolbarStyleUnifiedCompact,
+				HideToolbarSeparator: false,
+			},
 		},
 		BackgroundColour: application.NewRGB(27, 38, 54),
 		URL:              "/",

@@ -1,3 +1,4 @@
+import * as React from 'react'
 import {
     CheckIcon,
     ChevronRightIcon,
@@ -24,7 +25,6 @@ import {
     UserIcon,
     XIcon,
 } from 'lucide-react'
-import * as React from 'react'
 
 import { Badge } from '../components/badge'
 import { Banner } from '../components/banner'

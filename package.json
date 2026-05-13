@@ -2,6 +2,7 @@
     "name": "hollowcube-editor",
     "private": true,
     "workspaces": [
+        "api",
         "common",
         "design-system",
         "web",

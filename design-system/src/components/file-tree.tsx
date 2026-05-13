@@ -1,5 +1,5 @@
-import { ChevronRightIcon, FileIcon, FolderIcon, FolderOpenIcon } from 'lucide-react'
 import * as React from 'react'
+import { ChevronRightIcon, FileIcon, FolderIcon, FolderOpenIcon } from 'lucide-react'
 
 import { cn } from '../utils'
 

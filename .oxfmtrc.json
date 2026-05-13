@@ -15,18 +15,38 @@
     "sortImports": {
         "customGroups": [
             {
+                "groupName": "sideEffectStyle",
+                "selector": "side_effect_style"
+            },
+            {
+                "groupName": "sideEffect",
+                "selector": "side_effect"
+            },
+            {
+                "groupName": "react",
+                "elementNamePattern": ["react", "react/**", "react-*", "react-*/**"]
+            },
+            {
                 "groupName": "hollowcube",
-                "elementNamePattern": ["^@hollowcube/.*"]
+                "elementNamePattern": ["@hollowcube/**"]
+            },
+            {
+                "groupName": "tilde",
+                "elementNamePattern": ["~/**", "~*"]
             }
         ],
         "groups": [
+            "react",
             ["builtin", "external"],
             { "newlinesBetween": true },
             "hollowcube",
             { "newlinesBetween": true },
-            ["parent", "sibling", "index"]
+            "tilde",
+            ["parent", "sibling", "index"],
+            { "newlinesBetween": true },
+            ["sideEffect", "sideEffectStyle"]
         ],
-        "newlinesBetween": true,
+        "newlinesBetween": false,
         "ignoreCase": true,
         "order": "asc"
     },

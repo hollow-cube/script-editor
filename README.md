@@ -1,7 +1,8 @@
 Credits TODO:
-* lucide
-* catpuccin icons
-* bun
-* code mirror
-* luau-lsp
-* fleet/jetbrains ds
+
+- lucide
+- catpuccin icons
+- bun
+- code mirror
+- luau-lsp
+- fleet/jetbrains ds

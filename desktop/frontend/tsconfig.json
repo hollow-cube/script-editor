@@ -1,4 +1,16 @@
 {
-    "files": [],
-    "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }]
+    "extends": "../../tsconfig.base.json",
+    "compilerOptions": {
+        "types": ["node"],
+        "allowImportingTsExtensions": true,
+        "noEmit": true,
+        "noUnusedLocals": true,
+        "noUnusedParameters": true,
+        "noUncheckedSideEffectImports": true,
+        "baseUrl": ".",
+        "paths": {
+            "@/*": ["./src/*"]
+        }
+    },
+    "include": ["src", "bindings", "vite.config.ts"]
 }
