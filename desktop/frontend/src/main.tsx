@@ -6,6 +6,7 @@ import { AppRoot } from '@hollowcube/common'
 import { createBrowserStorage } from '@hollowcube/common/platform'
 
 import { desktopApiTransport } from './api-bridge'
+import { desktopMenuController } from './menu-bridge'
 
 import '@hollowcube/design-system/globals.css'
 import './style.css'
@@ -15,6 +16,7 @@ const platform = {
     kind: 'desktop' as const,
     storage: createBrowserStorage(),
     apiTransport: desktopApiTransport,
+    menu: desktopMenuController,
 }
 
 createRoot(document.getElementById('root')!).render(

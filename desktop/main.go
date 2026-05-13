@@ -18,10 +18,12 @@ import (
 var assets embed.FS
 
 func init() {
-	// Register a custom event whose associated data type is string.
-	// This is not required, but the binding generator will pick up registered events
-	// and provide a strongly typed JS/TS API for them.
+	// Register custom events with their associated data types so the binding
+	// generator produces strongly typed JS/TS APIs for them.
 	application.RegisterEvent[string]("time")
+	// Native menu clicks: data is the slot id (`file.new`, etc.) — the
+	// frontend maps it to a registered Action and dispatches.
+	application.RegisterEvent[string](MenuInvokeEvent)
 }
 
 // main function serves as the application's entry point. It initializes the application, creates a window,
@@ -48,6 +50,10 @@ func main() {
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
 		},
 	})
+
+	// Install the native menu before opening the window so it appears in the
+	// macOS menu bar from first paint.
+	app.Menu.SetApplicationMenu(BuildAppMenu(app))
 
 	// Create a new window with the necessary options.
 	// 'Title' is the title of the window.

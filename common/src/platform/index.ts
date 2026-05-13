@@ -1,6 +1,7 @@
 export {
     type Dialogs,
     type FileSystem,
+    type MenuController,
     type Platform,
     type PlatformKind,
     type Storage,

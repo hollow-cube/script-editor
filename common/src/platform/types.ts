@@ -39,6 +39,24 @@ export type WindowControls = {
     close(): void
 }
 
+/** Native menu controller. The host registers a slot-id → action-id table
+ *  once on mount, then subscribes to `onInvoke` to receive clicks on native
+ *  menu items. The Go side owns the menu structure; the JS side just routes
+ *  clicks through the action registry. Desktop only.
+ *
+ *  The bridge has no opinion about what an action is — it just forwards slot
+ *  strings. The slot table lives in the frontend, alongside the action
+ *  registrations, so adding a menu item is a Go change + a one-line JS table
+ *  update. */
+export type MenuController = {
+    /** Optional: register a slot map so the controller can validate or
+     *  pre-warm. Most impls treat this as a no-op since the lookup happens
+     *  in the action registry layer above. */
+    register?: (slotMap: Readonly<Record<string, string>>) => void
+    /** Subscribe to native menu clicks. Returns an unsubscribe function. */
+    onInvoke: (handler: (slotId: string) => void) => () => void
+}
+
 export type Platform = {
     kind: PlatformKind
     storage: Storage
@@ -53,4 +71,6 @@ export type Platform = {
      *  and can mirror writes to the local filesystem. Undefined on web — the
      *  client falls back to its built-in XHR shim. */
     apiTransport?: HCTransport
+    /** Native menu bridge — desktop only. */
+    menu?: MenuController
 }

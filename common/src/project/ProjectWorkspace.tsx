@@ -17,6 +17,7 @@ import {
     ActionContextProvider,
     ActionHotkeyBridge,
     ActionRegistryProvider,
+    NativeMenuBridge,
     useProjectActions,
     useRegisterAction,
 } from './actions'
@@ -139,6 +140,7 @@ function ProjectWorkspaceInner() {
                 <CloseFocusedTabAction useStore={useStore} />
                 <SearchActions />
                 <ActionHotkeyBridge />
+                <NativeMenuBridge />
                 <ProjectTopBar useStore={useStore} />
                 <div className='min-h-0 flex-1'>
                     <Workspace

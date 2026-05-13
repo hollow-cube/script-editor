@@ -19,6 +19,8 @@ export {
     useActionContextSnapshot,
 } from './context'
 export { ActionContextMenu, type ActionContextMenuProps } from './ActionContextMenu'
+export { NativeMenuBridge } from './NativeMenuBridge'
+export { NATIVE_MENU_SLOTS, type NativeMenuSlotId } from './native-menu-slots'
 
 // Host-level project actions (open editor, open tool). Different concept from
 // the registry above, but lives in this folder because it's the same conceptual
