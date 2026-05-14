@@ -50,3 +50,18 @@ export {
 } from './documents'
 export { AppErrorBoundary, PaneErrorBoundary } from './error-boundary'
 export { ProjectLoader, ProjectGate, HCClientProvider, useHCClient } from './data'
+export { ProjectServices, type LuauLspSnapshot } from './services'
+export {
+    ProjectServicesProvider,
+    ServicesActionRegistryAdapter,
+    useProjectServices,
+} from './services-context'
+export {
+    ContextKeys,
+    contextMatches,
+    type ContextKey,
+    type ToolKey,
+    type EditorKey,
+    type LspKey,
+} from './actions/context-keys'
+export { ActionRegistry } from './actions/registry-class'

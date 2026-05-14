@@ -26,8 +26,18 @@ func BuildAppMenu(app *application.App) *application.Menu {
 	file.AddSeparator()
 	emit(file.Add("Close Tab"), app, "tab.close").SetAccelerator("CmdOrCtrl+W")
 
-	// Edit menu
+	// Edit menu. The standard clipboard roles MUST live here for macOS to
+	// route Cmd+C/V/X to the focused WebView — without them the OS
+	// intercepts the keystrokes before they reach CodeMirror.
 	edit := menu.AddSubmenu("Edit")
+	edit.AddRole(application.Undo)
+	edit.AddRole(application.Redo)
+	edit.AddSeparator()
+	edit.AddRole(application.Cut)
+	edit.AddRole(application.Copy)
+	edit.AddRole(application.Paste)
+	edit.AddRole(application.SelectAll)
+	edit.AddSeparator()
 	emit(edit.Add("Search Everywhere"), app, "search.openAll")
 	emit(edit.Add("Find Action…"), app, "search.openActions").SetAccelerator("F1")
 	emit(edit.Add("Go to File…"), app, "search.openFiles").SetAccelerator("CmdOrCtrl+Shift+O")

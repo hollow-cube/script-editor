@@ -76,7 +76,11 @@ export function lspCompletion(client: LspClient, uri: string) {
     )
 
     const source = async (ctx: CompletionContext): Promise<CompletionResult | null> => {
-        const word = ctx.matchBefore(/[\w.:]*/)
+        // Match only word chars *after* any trigger. The trigger char itself
+        // (`.` / `:`) stays in the doc and is NOT part of the prefix used to
+        // filter completion options — otherwise CM6 would try to match e.g.
+        // `defineState` against the prefix `store.` and reject every option.
+        const word = ctx.matchBefore(/\w+/)
         const lastChar = ctx.state.doc.sliceString(Math.max(0, ctx.pos - 1), ctx.pos)
         const isTrigger = triggerChars.has(lastChar)
         if (!ctx.explicit && !isTrigger && (!word || word.from === word.to)) return null
@@ -99,7 +103,7 @@ export function lspCompletion(client: LspClient, uri: string) {
         return {
             from,
             options: items.map(buildCompletion),
-            validFor: /^[\w.:]*$/,
+            validFor: /^\w*$/,
         }
     }
 

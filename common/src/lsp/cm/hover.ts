@@ -1,4 +1,4 @@
-import { hoverTooltip } from '@codemirror/view'
+import { hoverTooltip, tooltips, type EditorView } from '@codemirror/view'
 import type { Diagnostic as LspDiagnostic, Hover } from 'vscode-languageserver-types'
 
 import { type LspClient } from '../LspClient'
@@ -107,8 +107,23 @@ function buildHoverDom(diagnostics: LspDiagnostic[], markdownBlocks: string[]): 
     return dom
 }
 
+// CM6 clamps tooltips to this rect. Default is the full viewport, which lets
+// hover popovers sit flush against the right/bottom edge. Inset a few pixels
+// so the popover keeps breathing room from the window edge.
+const TOOLTIP_VIEWPORT_INSET = 12
+
+function insetTooltipSpace(view: EditorView) {
+    const doc = view.dom.ownerDocument.documentElement
+    return {
+        top: TOOLTIP_VIEWPORT_INSET,
+        bottom: doc.clientHeight - TOOLTIP_VIEWPORT_INSET,
+        left: TOOLTIP_VIEWPORT_INSET,
+        right: doc.clientWidth - TOOLTIP_VIEWPORT_INSET,
+    }
+}
+
 export function lspHover(client: LspClient, uri: string) {
-    return hoverTooltip(async (view, pos) => {
+    const hover = hoverTooltip(async (view, pos) => {
         const lineInfo = view.state.doc.lineAt(pos)
         const lineText = lineInfo.text
         let start = pos
@@ -153,4 +168,5 @@ export function lspHover(client: LspClient, uri: string) {
             },
         }
     })
+    return [hover, tooltips({ tooltipSpace: insetTooltipSpace })]
 }

@@ -46,8 +46,38 @@ export function useLanguageById(id: string | undefined): LanguageDefinition | un
 
 export function useLanguageForMime(mimeType: string | undefined): LanguageDefinition | undefined {
     const { languages } = useLanguageRegistry()
+    return resolveLanguageForMime(languages, mimeType)
+}
+
+/** Resolve a language by file path. Extension match wins (deterministic);
+ *  there's no mime fallback because callers that know a mime should use
+ *  `resolveLanguageForMime` directly. Returns undefined when nothing matches. */
+export function useLanguageForPath(path: string | undefined): LanguageDefinition | undefined {
+    const { languages } = useLanguageRegistry()
+    return resolveLanguageForPath(languages, path)
+}
+
+/** Plain (React-free) language lookup by mime type. First match wins.
+ *  Supports `<type>/*` wildcard patterns in `LanguageDefinition.mimeTypes`. */
+export function resolveLanguageForMime(
+    languages: readonly LanguageDefinition[],
+    mimeType: string | undefined,
+): LanguageDefinition | undefined {
     if (!mimeType) return undefined
     return languages.find((l) => l.mimeTypes.some((p) => matchesMime(p, mimeType)))
+}
+
+/** Plain (React-free) language lookup by file path. Match is by file
+ *  extension (case-insensitive) against `LanguageDefinition.extensions`. */
+export function resolveLanguageForPath(
+    languages: readonly LanguageDefinition[],
+    path: string | undefined,
+): LanguageDefinition | undefined {
+    if (!path) return undefined
+    const dot = path.lastIndexOf('.')
+    if (dot === -1) return undefined
+    const ext = path.slice(dot).toLowerCase()
+    return languages.find((l) => l.extensions.includes(ext))
 }
 
 function matchesMime(pattern: string, mime: string): boolean {

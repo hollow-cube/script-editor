@@ -24,6 +24,7 @@ import { cn } from '@hollowcube/design-system'
 import { ActionContextMenu } from '../project/actions/ActionContextMenu'
 import { type Action } from '../project/actions/types'
 import { UsagesPopup, type UsageMatch } from './components/UsagesPopup'
+import { runFormatOnView } from './formatters/runFormat'
 import { activeLineHighlight } from './extensions/activeLine'
 import {
     cmdHoverWord,
@@ -111,6 +112,11 @@ export type CodeEditorProps = {
      *  pre-computed match set (LSP references). Use this when the host has
      *  resolved matches via the LSP instead of the built-in string scan. */
     apiRef?: React.RefObject<CodeEditorApi | null>
+    /** Fires with the freshly-mounted `EditorView` after construction, and
+     *  with `null` on unmount. Wrappers use this to register the view in a
+     *  module-level active-editor registry so globally-bound actions (e.g.
+     *  the format hotkey) can find it. */
+    onViewChange?: (view: EditorView | null) => void
     className?: string
 }
 
@@ -159,6 +165,7 @@ function CodeEditor({
     suppressCmdClickUsages = false,
     suppressFoldGutter = false,
     apiRef,
+    onViewChange,
     className,
 }: CodeEditorProps) {
     // Active-line tint follows interactions by default; singleLine forces it
@@ -194,6 +201,14 @@ function CodeEditor({
 
     const [flashMsg, setFlashMsg] = React.useState<string | null>(null)
 
+    // Hold the parent's `onViewChange` in a ref so a non-memoised callback
+    // doesn't rebuild the editor on every render. The view-construction effect
+    // reads the current value at mount and unmount.
+    const onViewChangeRef = React.useRef(onViewChange)
+    React.useEffect(() => {
+        onViewChangeRef.current = onViewChange
+    }, [onViewChange])
+
     React.useEffect(() => {
         const host = hostRef.current
         if (!host) return
@@ -217,7 +232,22 @@ function CodeEditor({
             flashHighlight(),
             editorTheme(armadaDark),
             editorHighlightStyle(armadaDark),
-            keymap.of([...defaultKeymap, ...historyKeymap, ...foldKeymap, indentWithTab]),
+            keymap.of([
+                ...defaultKeymap,
+                ...historyKeymap,
+                ...foldKeymap,
+                indentWithTab,
+                {
+                    key: 'Mod-Alt-l',
+                    run: (view) => {
+                        void (async () => {
+                            const result = await runFormatOnView(view, language)
+                            if (!result.ok) setFlashMsg(`Format failed: ${result.error}`)
+                        })()
+                        return true
+                    },
+                },
+            ]),
             readOnlyCompartmentRef.current.of(EditorState.readOnly.of(readOnly)),
             iconsCompartmentRef.current.of(iconGutterMap.of(gutterIcons ?? {})),
             lineOffsetCompartmentRef.current.of(iconGutterLineOffset.of(lineOffset)),
@@ -271,7 +301,9 @@ function CodeEditor({
 
         const view = new EditorView({ state, parent: host })
         viewRef.current = view
+        onViewChangeRef.current?.(view)
         return () => {
+            onViewChangeRef.current?.(null)
             view.destroy()
             viewRef.current = null
         }
@@ -691,21 +723,9 @@ function CodeEditor({
             const pos = ctxMenu.tokenFrom ?? view.state.selection.main.head
             onGoToDefinitionAt(pos, view)
         }
-        const format = () => {
-            const view = viewRef.current
-            if (!view) return
-            const formatter = language?.formatter
-            if (!formatter) {
-                setFlashMsg('No formatter available for this language')
-                return
-            }
-            const doc = view.state.doc.toString()
-            const result = formatter(doc)
-            if (result.ok) {
-                view.dispatch({ changes: { from: 0, to: doc.length, insert: result.text } })
-            } else {
-                setFlashMsg(`Format failed: ${result.error}`)
-            }
+        const format = async () => {
+            const result = await runFormatOnView(viewRef.current, language)
+            if (!result.ok) setFlashMsg(`Format failed: ${result.error}`)
         }
         const doFoldAll = () => {
             const view = viewRef.current
@@ -762,9 +782,9 @@ function CodeEditor({
                 id: 'editor.format',
                 title: 'Format document',
                 group: 'edit',
-                keybinding: 'alt+shift+f',
+                keybinding: '$mod+alt+l',
                 disabled: !language?.formatter,
-                run: format,
+                run: () => void format(),
             },
             { id: 'editor.foldAll', title: 'Fold all', group: 'edit', run: doFoldAll },
             { id: 'editor.unfoldAll', title: 'Unfold all', group: 'edit', run: doUnfoldAll },

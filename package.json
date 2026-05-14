@@ -15,12 +15,14 @@
         "build:web": "bun --filter @hollowcube/web build",
         "build:desktop": "cd desktop && wails3 build",
         "typecheck": "bun --filter '*' typecheck",
+        "test": "bun --filter '*' test",
         "lint": "oxlint",
         "lint:fix": "oxlint --fix",
         "format": "oxfmt",
         "format:check": "oxfmt --check"
     },
     "devDependencies": {
+        "@types/bun": "^1.3.14",
         "@types/node": "^22.10.0",
         "oxfmt": "^0.48.0",
         "oxlint": "^1.63.0",

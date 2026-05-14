@@ -5,83 +5,48 @@ import {
     useEffect,
     useMemo,
     useRef,
-    useState,
+    useSyncExternalStore,
     type ReactNode,
 } from 'react'
 
 import { actionMatchesContext, useActionContextSnapshot } from './context'
+import { ActionRegistry } from './registry-class'
 import { type Action, type ActionRunContext } from './types'
 
-// Storing actions in a Zustand-style ref-with-version dance instead of plain
-// React state because:
-//
-//  • Producers may live deep in the tree (a tool's panel registering its own
-//    actions) and we don't want re-registration to cause re-renders for
-//    consumers that only need lookup.
-//
-//  • Hotkey-bridge needs a stable identity for the action list so we don't
-//    re-bind every keystroke.
+// Thin React adapter over the plain-TS `ActionRegistry`. The class owns state
+// and dispatch; this file exposes a Provider + hooks so consumers can subscribe
+// to registration changes and run actions through the same instance.
 
-type ActionRegistryValue = {
-    register: (action: Action) => () => void
-    unregister: (id: string) => void
-    /** Invoke an action by id. Returns true on success, false if the action
-     *  isn't registered or its `when` guard returned false. Context filtering
-     *  is intentionally NOT applied here — callers (hotkey bridge, search
-     *  popup) decide whether to consult `getActionContextSnapshot()` first. */
-    run: (id: string, ctx: ActionRunContext) => boolean
-    list: () => readonly Action[]
-    get: (id: string) => Action | undefined
-    /** Bumped on every change so consumers can opt-in to re-render. */
-    version: number
-}
-
-const ActionRegistryContext = createContext<ActionRegistryValue | null>(null)
+const ActionRegistryContext = createContext<ActionRegistry | null>(null)
 
 type ProviderProps = {
     children: ReactNode
     initialActions?: readonly Action[]
+    /** Optional pre-built registry. When provided, the provider mounts it
+     *  directly instead of constructing a fresh one. Lets the host hand in
+     *  the `services.actions` instance so a single registry is shared across
+     *  the app. */
+    registry?: ActionRegistry
 }
 
-export function ActionRegistryProvider({ children, initialActions }: ProviderProps) {
-    const actionsRef = useRef<Map<string, Action>>(new Map(initialActions?.map((a) => [a.id, a])))
-    const [version, setVersion] = useState(0)
-    const bump = useCallback(() => setVersion((v) => v + 1), [])
+export function ActionRegistryProvider({ children, initialActions, registry }: ProviderProps) {
+    const instance = useMemo(() => {
+        const r = registry ?? new ActionRegistry()
+        if (initialActions) {
+            for (const a of initialActions) r.register(a)
+        }
+        return r
+        // Constructing once: `initialActions` and `registry` are treated as
+        // mount-time fixtures. Updates land via `register()` from children.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [])
 
-    const value = useMemo<ActionRegistryValue>(
-        () => ({
-            register: (action) => {
-                actionsRef.current.set(action.id, action)
-                bump()
-                return () => {
-                    if (actionsRef.current.get(action.id) === action) {
-                        actionsRef.current.delete(action.id)
-                        bump()
-                    }
-                }
-            },
-            unregister: (id) => {
-                if (actionsRef.current.delete(id)) bump()
-            },
-            run: (id, ctx) => {
-                const action = actionsRef.current.get(id)
-                if (!action) return false
-                if (action.when && !action.when()) return false
-                if (action.disabled) return false
-                void action.run(ctx)
-                return true
-            },
-            list: () => Array.from(actionsRef.current.values()),
-            get: (id) => actionsRef.current.get(id),
-            version,
-        }),
-        [bump, version],
+    return (
+        <ActionRegistryContext.Provider value={instance}>{children}</ActionRegistryContext.Provider>
     )
-
-    return <ActionRegistryContext.Provider value={value}>{children}</ActionRegistryContext.Provider>
 }
 
-function useActionRegistry(): ActionRegistryValue {
+function useActionRegistry(): ActionRegistry {
     const ctx = useContext(ActionRegistryContext)
     if (!ctx) {
         throw new Error('useActionRegistry must be used inside <ActionRegistryProvider>')
@@ -89,13 +54,7 @@ function useActionRegistry(): ActionRegistryValue {
     return ctx
 }
 
-/** Register an action for the lifetime of the calling component. The action
- *  is removed when the component unmounts. Re-registers when the action
- *  identity changes (compared by identity — wrap handlers in `useCallback`).
- *
- *  Reads the registry via a ref so that bumps from `register` itself don't
- *  re-trigger the effect (which would otherwise spin in an unregister →
- *  bump → re-register loop). */
+/** Register an action for the lifetime of the calling component. */
 export function useRegisterAction(action: Action) {
     const registry = useActionRegistry()
     const registryRef = useRef(registry)
@@ -105,16 +64,29 @@ export function useRegisterAction(action: Action) {
     }, [action])
 }
 
+const EMPTY_ACTIONS: readonly Action[] = Object.freeze([])
+
 /** Snapshot of all actions. Re-renders on each registration change. */
 export function useActions(): readonly Action[] {
     const registry = useActionRegistry()
-    return useMemo(() => registry.list(), [registry])
+    const subscribe = useCallback((cb: () => void) => registry.subscribe(cb), [registry])
+    // The class's `list()` builds a fresh array each call, so we cache by
+    // version to give `useSyncExternalStore` a stable snapshot reference.
+    const lastVersion = useRef(-1)
+    const lastList = useRef<readonly Action[]>(EMPTY_ACTIONS)
+    const getSnapshot = useCallback(() => {
+        if (lastVersion.current !== registry.version) {
+            lastVersion.current = registry.version
+            lastList.current = registry.list()
+        }
+        return lastList.current
+    }, [registry])
+    return useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 }
 
-/** Run an action by id. Returns true on success, false if not found or
- *  guarded by `when` / context filtering. Context filtering is applied here
- *  so non-hotkey callers (search popup, native menu bridge) get consistent
- *  behavior with the hotkey path. */
+/** Run an action by id. Applies context-tag filtering so non-hotkey callers
+ *  (search popup, native menu bridge) get the same availability behavior as
+ *  the hotkey path. */
 export function useRunAction(): (id: string, ctx: ActionRunContext) => boolean {
     const registry = useActionRegistry()
     const getContextSnapshot = useActionContextSnapshot()
@@ -128,3 +100,12 @@ export function useRunAction(): (id: string, ctx: ActionRunContext) => boolean {
         [registry, getContextSnapshot],
     )
 }
+
+/** Read-only handle to the raw registry instance. Reserved for non-React
+ *  consumers (e.g. tests, future module-scope bootstrapping). UI code should
+ *  use the hooks above. */
+export function useActionRegistryInstance(): ActionRegistry {
+    return useActionRegistry()
+}
+
+export { ActionRegistry }

@@ -68,6 +68,26 @@ export function useProjectActionsForStore(useStore: WorkspaceStoreHook): Project
                 return
             }
 
+            // Singleton editors (Welcome / API test / Docs): if any tab of the
+            // same kind exists, activate it instead of creating another. The
+            // payload may still drift between opens (e.g. docs tab targeting
+            // a different module), but for singletons we don't want a second
+            // instance to coexist.
+            if (editor.singleton) {
+                const existing = findFirstTabOfKind(store, editor.kind)
+                if (existing) {
+                    if (args.payload) {
+                        const merged = { ...existing.tab.payload, ...args.payload }
+                        store.updateTab(existing.tab.id, { payload: merged })
+                    }
+                    store.activateTab(
+                        { kind: 'editor', leafId: existing.leafId },
+                        existing.tab.id,
+                    )
+                    return
+                }
+            }
+
             if (args.identityKey && args.payload?.[args.identityKey] !== undefined) {
                 const match = findTabByIdentity(store, editor.kind, args.identityKey, args.payload)
                 if (match) {
@@ -77,7 +97,7 @@ export function useProjectActionsForStore(useStore: WorkspaceStoreHook): Project
                     // Identity-key value matches by construction, so this
                     // doesn't drift the tab's identity.
                     if (args.payload) {
-                        const merged = { ...(match.tab.payload ?? {}), ...args.payload }
+                        const merged = { ...match.tab.payload, ...args.payload }
                         store.updateTab(match.tab.id, { payload: merged })
                     }
                     store.activateTab({ kind: 'editor', leafId: match.leafId }, match.tab.id)
@@ -149,6 +169,22 @@ function resolveOpenTargetLeaf(state: WorkspaceStore, target: OpenEditorTarget):
         return target.leafId
     }
     return resolveTargetLeaf(state).id
+}
+
+function findFirstTabOfKind(
+    state: WorkspaceStore,
+    kind: string,
+): { leafId: string; tab: Tab } | null {
+    const locations = selectTabLocations(state)
+    for (const [tabId, loc] of locations) {
+        if (loc.kind !== 'editor') continue
+        const leaf = findLeafWalk(state, loc.leafId)
+        const tab = leaf?.tabs.find((t) => t.id === tabId)
+        if (tab && tab.kind === kind) {
+            return { leafId: loc.leafId, tab }
+        }
+    }
+    return null
 }
 
 function findTabByIdentity(

@@ -38,6 +38,7 @@ function WelcomeTab() {
 export const welcomeEditor: EditorDefinition = {
     kind: WELCOME_EDITOR_KIND,
     mimeTypes: [],
+    singleton: true,
     titleFor: () => 'Welcome',
     render: () => <WelcomeTab />,
 }

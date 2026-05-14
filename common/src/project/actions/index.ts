@@ -14,6 +14,7 @@ export {
     useActionContextSnapshot,
 } from './context'
 export { ActionContextMenu, type ActionContextMenuProps } from './ActionContextMenu'
+export { EditorActions } from './EditorActions'
 export { NativeMenuBridge } from './NativeMenuBridge'
 export { NATIVE_MENU_SLOTS, type NativeMenuSlotId } from './native-menu-slots'
 

@@ -1,6 +1,8 @@
 import { createHighlighter, type Highlighter } from 'shiki'
 
+import { formatLuau } from '../formatters/stylua'
 import luauGrammar from './Luau.tmLanguage.json'
+import { createLuauEditorBinding } from './luau-editor-services'
 import { shikiHighlight } from './shikiHighlight'
 import { type LanguageDefinition } from './types'
 
@@ -76,4 +78,6 @@ export const luauLanguage: LanguageDefinition = {
     mimeTypes: ['application/luau', 'text/x-luau'],
     extensions: ['.luau', '.lua'],
     cmExtension: () => shikiHighlight('luau', LUAU_THEME_NAME, getLuauHighlighter),
+    formatter: formatLuau,
+    createEditorServices: (deps) => createLuauEditorBinding(deps),
 }

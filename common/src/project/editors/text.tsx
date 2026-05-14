@@ -1,4 +1,13 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+    useCallback,
+    useEffect,
+    useId,
+    useMemo,
+    useRef,
+    useState,
+    useSyncExternalStore,
+    type ReactNode,
+} from 'react'
 
 import {
     useV1ProjectFilesGet,
@@ -7,20 +16,18 @@ import {
 } from '@hollowcube/api'
 import { Button, Input, Label } from '@hollowcube/design-system'
 
+import { type EditorView } from '@codemirror/view'
+
 import { CodeEditor, type CodeEditorApi, type UsageMatch } from '../../editor'
-import { useLanguageForMime } from '../../editor/languages'
+import { clearActiveEditor, setActiveEditor } from '../../editor/active-editor-registry'
 import {
-    fileUriFromPath,
-    lspExtensions,
-    LUAU_LANGUAGE_ID,
-    resolveUri,
-    runGotoDefinitionAtPos,
-    useDiagnosticCounts,
-    useLuauLsp,
+    useLanguageForMime,
+    useLanguageForPath,
     type DiagnosticCounts,
-    type ReferenceMatch,
-    type ResolvedUri,
-} from '../../lsp'
+    type EditorServices,
+    type LanguageEditorBinding,
+} from '../../editor/languages'
+import { fileUriFromPath } from '../../editor/languages/luau-editor-services'
 import { type Tab, useWorkspaceContext } from '../../workspace'
 import { useProjectActions } from '../actions'
 import { useProject } from '../context'
@@ -28,7 +35,8 @@ import { usePendingFile, usePendingFilesStore } from '../data/pending-files'
 import { useDocument, useDocumentStore } from '../documents'
 import { renderFileIcon } from '../file-icons'
 import { type EditorDefinition } from '../registry'
-import { DOCS_EDITOR_KIND } from './docs'
+import { useProjectServices } from '../services-context'
+import { TEXT_EDITOR_KIND } from './text-kind'
 
 // Generic plain-text editor. Handles two payload shapes:
 //
@@ -41,7 +49,18 @@ import { DOCS_EDITOR_KIND } from './docs'
 // Save triggers: editor blur, Ctrl/Cmd+S, and the workspace store's
 // `beforeCloseTab` hook (wired in ProjectWorkspace).
 
-export const TEXT_EDITOR_KIND = 'editor:text'
+// Re-export so existing `from './editors/text'` import sites keep working
+// while the standalone module is the canonical source.
+export { TEXT_EDITOR_KIND }
+
+const EMPTY_EDITOR_SERVICES: EditorServices = {}
+const EMPTY_DIAGNOSTIC_COUNTS: DiagnosticCounts = {
+    errors: 0,
+    warnings: 0,
+    infos: 0,
+    hints: 0,
+    total: 0,
+}
 
 /** Inclusive 1-indexed line + 0-indexed column ranges, captured at the LSP
  *  layer (line/character tuples) before we know the target document's
@@ -67,7 +86,7 @@ export type TextEditorPayload = {
     flashLspRange?: FlashLspRange
 }
 
-function parseTextPayload(raw: unknown): TextEditorPayload {
+export function parseTextPayload(raw: unknown): TextEditorPayload {
     if (!raw || typeof raw !== 'object') return {}
     const obj = raw as Record<string, unknown>
     const out: TextEditorPayload = {}
@@ -100,7 +119,7 @@ function basename(path: string): string {
 /** Convert an LSP `{ line, character }` (UTF-16 code units, 0-indexed) to a
  *  document offset in `text`. Clamps out-of-range positions to the nearest
  *  valid offset so a stale flash hint can't crash the editor. */
-function lspPosToOffset(text: string, line: number, character: number): number {
+export function lspPosToOffset(text: string, line: number, character: number): number {
     if (line < 0) return 0
     let offset = 0
     let currentLine = 0
@@ -120,7 +139,10 @@ function lspPosToOffset(text: string, line: number, character: number): number {
 // `parsePayload` narrows everything that flows through.
 export const textEditor: EditorDefinition = {
     kind: TEXT_EDITOR_KIND,
-    mimeTypes: ['text/*', 'application/json', 'application/luau', 'text/x-luau'],
+    // Self-description for "what kinds of content does this editor render".
+    // Concrete language-by-path resolution happens inside the component via
+    // the language registry — no need to enumerate language mimes here.
+    mimeTypes: ['text/*'],
     parsePayload: (raw) => parseTextPayload(raw),
     titleFor: (payload) => titleFor(payload as TextEditorPayload),
     iconFor: (payload) => {
@@ -136,7 +158,7 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
     const documentStore = useDocumentStore()
     const pendingStore = usePendingFilesStore()
     const updateMutation = useV1ProjectFilesUpdate()
-    const luauLsp = useLuauLsp()
+    const services = useProjectServices()
     const { openEditor } = useProjectActions()
     const editorApiRef = useRef<CodeEditorApi | null>(null)
 
@@ -158,149 +180,78 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
 
     const doc = useDocument(docId)
 
-    // Resolve the language. Prefer the path-based mime when the server's
-    // content-type is too coarse (text/plain) to pick a specific language —
-    // backends often return text/plain for `.luau` since there's no standard
-    // mime for it. Pending files have no server content-type, so the path
-    // fallback is the only signal.
-    const mimeFromServer = fileQuery.data?.contentType
-    const mimeFromPath = effectivePath ? mimeFromExtension(effectivePath) : undefined
-    const resolvedMime =
-        mimeFromPath && (!mimeFromServer || mimeFromServer === 'text/plain')
-            ? mimeFromPath
-            : (mimeFromServer ?? mimeFromPath)
-    const language = useLanguageForMime(resolvedMime)
+    // Resolve the language. Prefer the path-based lookup because the server's
+    // content-type is often too coarse (text/plain for `.luau` since there's no
+    // standard mime). Fall back to the server's mime only when the path has no
+    // matching language registered. Pending files have no server content-type,
+    // so the path lookup is the only signal.
+    const fromPath = useLanguageForPath(effectivePath ?? undefined)
+    const fromMime = useLanguageForMime(fileQuery.data?.contentType)
+    const language = fromPath ?? fromMime
 
-    // Extra extensions: when the file is Luau and the LSP is running, fold in
-    // the LSP-driven feature set keyed on the file's URI. didOpen/didChange/
-    // didClose are owned by LspBufferBridge — we only inject the read-side
-    // extensions here.
+    // Per-language editor services (LSP extensions, goto-def, diagnostics, ...).
+    // The language module owns its LSP wiring; this component just hosts the
+    // binding and renders any UI from its snapshot. Languages with no rich
+    // services (JSON, plaintext) simply return null below.
     const knownPaths = useMemo(() => project.files.map((f) => f.path), [project.files])
-    const luauLspActive =
-        language?.id === LUAU_LANGUAGE_ID &&
-        !!luauLsp.client &&
-        luauLsp.status === 'running' &&
-        !!effectivePath
 
-    const definitionOpenHandler = useCallback(
-        (resolved: ResolvedUri, targetRange?: { start: { line: number; character: number }; end: { line: number; character: number } }) => {
-            if (resolved.kind === 'file') {
-                const payload: Record<string, unknown> = { path: resolved.path }
-                if (targetRange) {
-                    payload.flashLspRange = {
-                        startLine: targetRange.start.line,
-                        startCharacter: targetRange.start.character,
-                        endLine: targetRange.end.line,
-                        endCharacter: targetRange.end.character,
-                    }
-                }
-                openEditor({
-                    kind: TEXT_EDITOR_KIND,
-                    payload,
-                    identityKey: 'path',
-                })
-            } else if (resolved.kind === 'doc-module') {
-                openEditor({
-                    kind: DOCS_EDITOR_KIND,
-                    payload: { moduleId: resolved.module.alias, kind: 'library' },
-                    identityKey: 'moduleId',
-                })
-            } else if (resolved.kind === 'definition-file') {
-                openEditor({
-                    kind: DOCS_EDITOR_KIND,
-                    payload: { moduleId: resolved.file.alias, kind: 'definition-file' },
-                    identityKey: 'moduleId',
-                })
-            }
-        },
-        [openEditor],
-    )
-
-    const resolveTargetUri = useCallback(
-        (targetUri: string) => resolveUri(targetUri, knownPaths),
-        [knownPaths],
-    )
-
-    // Bridge LSP-supplied references into CodeEditor's existing find-usages
-    // popup. Fired when the user cmd-clicks a symbol's declaration —
-    // JetBrains-style "click-on-the-declaration shows usages" behavior.
-    const showReferences = useCallback(
+    // Stable callbacks for the binding. `showUsages` derives sourceText from
+    // the current document each invocation — kept here so the language module
+    // doesn't need to reach into the document store.
+    const showUsagesForBinding = useCallback(
         (
-            matches: ReferenceMatch[],
+            matches: UsageMatch[],
             anchorPos: number,
             sourceRange: { from: number; to: number },
         ) => {
             const api = editorApiRef.current
             if (!api) return
-            const usageMatches: UsageMatch[] = matches.map((m) => ({
-                line: m.line,
-                col: m.col,
-                from: m.from,
-                to: m.to,
-                snippet: m.snippet,
-            }))
-            // Title prefers the clicked source text so the popup header reads
-            // like a real symbol name. Falls back to a generic label.
-            const sourceText = (() => {
-                const doc = documentStore.getState().documents[docId]
-                if (!doc) return 'symbol'
-                return doc.current.slice(sourceRange.from, sourceRange.to) || 'symbol'
-            })()
-            api.showUsages(sourceText, usageMatches, anchorPos, sourceRange)
+            const doc = documentStore.getState().documents[docId]
+            const sourceText = doc
+                ? doc.current.slice(sourceRange.from, sourceRange.to) || 'symbol'
+                : 'symbol'
+            api.showUsages(sourceText, matches, anchorPos, sourceRange)
         },
         [docId, documentStore],
     )
 
-    const extraExtensions = useMemo(() => {
-        if (!luauLspActive || !effectivePath || !luauLsp.client) return undefined
-        const uri = fileUriFromPath(effectivePath)
-        return lspExtensions({
-            client: luauLsp.client,
-            uri,
-            resolve: resolveTargetUri,
-            onDefinitionOpen: definitionOpenHandler,
-            onShowReferences: showReferences,
+    // Construct the binding once per (language, uri) combination. Disposed on
+    // unmount or when the binding's identity changes (e.g. file rename).
+    const binding: LanguageEditorBinding | null = useMemo(() => {
+        if (!language?.createEditorServices || !effectivePath) return null
+        return language.createEditorServices({
+            services,
+            uri: fileUriFromPath(effectivePath),
+            path: effectivePath,
+            knownPaths,
+            openEditor,
+            showUsages: showUsagesForBinding,
         })
-    }, [
-        luauLspActive,
-        effectivePath,
-        luauLsp.client,
-        resolveTargetUri,
-        definitionOpenHandler,
-        showReferences,
-    ])
+    }, [language, effectivePath, services, knownPaths, openEditor, showUsagesForBinding])
 
-    // Allow the right-click "Go to definition" action to dispatch through
-    // the same LSP machinery cmd+click uses. Passes `showReferences` so the
-    // click-on-the-declaration case surfaces usages instead of a no-op cursor
-    // move.
-    const goToDefinitionAt = useMemo(() => {
-        if (!luauLspActive || !effectivePath || !luauLsp.client) return undefined
-        const client = luauLsp.client
-        const uri = fileUriFromPath(effectivePath)
-        return (pos: number, view: import('@codemirror/view').EditorView) => {
-            void runGotoDefinitionAtPos(
-                view,
-                client,
-                uri,
-                pos,
-                resolveTargetUri,
-                definitionOpenHandler,
-                showReferences,
-            )
-        }
-    }, [
-        luauLspActive,
-        effectivePath,
-        luauLsp.client,
-        resolveTargetUri,
-        definitionOpenHandler,
-        showReferences,
-    ])
+    useEffect(() => {
+        return () => binding?.dispose()
+    }, [binding])
 
-    // Diagnostic counts for the badge in the editor pane's top-right.
-    const diagnosticUri = luauLspActive && effectivePath ? fileUriFromPath(effectivePath) : null
-    const diagnosticCounts = useDiagnosticCounts(luauLsp.client, diagnosticUri)
+    const subscribeServices = useCallback(
+        (cb: () => void) => (binding ? binding.subscribe(cb) : () => {}),
+        [binding],
+    )
+    const getServicesSnapshot = useCallback(
+        () => (binding ? binding.getSnapshot() : EMPTY_EDITOR_SERVICES),
+        [binding],
+    )
+    const editorServices = useSyncExternalStore(
+        subscribeServices,
+        getServicesSnapshot,
+        getServicesSnapshot,
+    )
+
+    const extraExtensions = editorServices.extensions
+    const goToDefinitionAt = editorServices.gotoDefinitionAt
+    const suppressCmdClickUsages = editorServices.suppressCmdClickUsages ?? false
+    const suppressFoldGutter = editorServices.suppressFoldGutter ?? false
+    const diagnosticCounts = editorServices.diagnosticCounts ?? EMPTY_DIAGNOSTIC_COUNTS
 
     // Open / close the document on mount / unmount. The document store
     // refcounts so multiple tabs of the same file share a single buffer.
@@ -348,6 +299,33 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
         },
         [docId, documentStore],
     )
+
+    // Register the editor view + resolved language + save handler under this
+    // tab's id so globally-bound actions (`editor.format`, `editor.save`) can
+    // locate the right tab when fired from outside the editor's focus. Re-runs
+    // implicitly when CodeEditor remounts the view (e.g. when `language`
+    // changes). A ref forwards the latest `save` closure so the registered
+    // entry always sees current state.
+    const saveRef = useRef<() => Promise<boolean>>(async () => true)
+    const onViewChange = useCallback(
+        (view: EditorView | null) => {
+            if (view) {
+                setActiveEditor(tab.id, {
+                    view,
+                    language,
+                    save: () => saveRef.current(),
+                })
+            } else {
+                clearActiveEditor(tab.id)
+            }
+        },
+        [tab.id, language],
+    )
+    useEffect(() => {
+        return () => {
+            clearActiveEditor(tab.id)
+        }
+    }, [tab.id])
 
     const [savePromptOpen, setSavePromptOpen] = useState(false)
     const [saveError, setSaveError] = useState<unknown>(null)
@@ -436,17 +414,11 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
         return false
     }, [docId, documentStore, effectivePath, saveAtPath])
 
-    // Cmd/Ctrl+S — local to the editor pane so it only fires when the user is
-    // working in this tab.
+    // Keep the active-editor-registry's save handler in sync with the latest
+    // closure. The registered handler reads through this ref so it always
+    // observes current state.
     useEffect(() => {
-        const onKey = (e: KeyboardEvent) => {
-            if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
-                e.preventDefault()
-                void save()
-            }
-        }
-        window.addEventListener('keydown', onKey)
-        return () => window.removeEventListener('keydown', onKey)
+        saveRef.current = save
     }, [save])
 
     if (effectivePath && fileQuery.isPending) {
@@ -468,18 +440,17 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
                     language={language}
                     extraExtensions={extraExtensions}
                     onGoToDefinitionAt={goToDefinitionAt}
-                    suppressCmdClickUsages={luauLspActive}
-                    suppressFoldGutter={luauLspActive}
+                    suppressCmdClickUsages={suppressCmdClickUsages}
+                    suppressFoldGutter={suppressFoldGutter}
                     apiRef={editorApiRef}
+                    onViewChange={onViewChange}
                     scrollToLine={initialScrollToLine}
                     flashRange={flashRange}
                     onBlur={() => {
                         if (effectivePath) void save()
                     }}
                 />
-                {luauLspActive && diagnosticCounts.total > 0 ? (
-                    <DiagnosticBadge counts={diagnosticCounts} />
-                ) : null}
+                {diagnosticCounts.total > 0 ? <DiagnosticBadge counts={diagnosticCounts} /> : null}
             </div>
             {saveError ? (
                 <div className='border-destructive/40 bg-destructive/10 text-destructive m-2 rounded-sm border px-2 py-1 text-xs'>
@@ -563,24 +534,6 @@ function DiagnosticBadge({ counts }: { counts: DiagnosticCounts }) {
             ) : null}
         </div>
     )
-}
-
-// Best-effort mime sniffing from a filename. Covers the languages we register
-// in the LanguageRegistry; unknown extensions return `undefined` and the
-// editor falls back to plain text.
-function mimeFromExtension(path: string): string | undefined {
-    const dot = path.lastIndexOf('.')
-    if (dot === -1) return undefined
-    const ext = path.slice(dot).toLowerCase()
-    switch (ext) {
-        case '.json':
-            return 'application/json'
-        case '.luau':
-        case '.lua':
-            return 'application/luau'
-        default:
-            return undefined
-    }
 }
 
 function SavePathPrompt({

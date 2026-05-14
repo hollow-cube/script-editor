@@ -44,6 +44,10 @@ export type EditorDefinition<TPayload = unknown> = {
     kind: string
     /** Mime types this editor handles. Empty for synthetic editors like Welcome. */
     mimeTypes: readonly string[]
+    /** When true, this editor is a singleton: opening it again focuses the
+     *  existing instance instead of creating a new tab. Welcome / API-test /
+     *  Docs are singletons; the generic text editor is not. */
+    singleton?: boolean
     /** Validate and narrow the tab's payload. Receives the raw `Tab.payload`
      *  blob from storage. If omitted, the raw value is passed through as-is. */
     parsePayload?: (raw: unknown) => TPayload

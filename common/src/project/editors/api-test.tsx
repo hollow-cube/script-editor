@@ -6,6 +6,7 @@ export const API_TEST_EDITOR_KIND = 'editor:api-test'
 export const apiTestEditor: EditorDefinition = {
     kind: API_TEST_EDITOR_KIND,
     mimeTypes: [],
+    singleton: true,
     titleFor: () => 'API test',
     render: () => <ApiTestDemo />,
 }

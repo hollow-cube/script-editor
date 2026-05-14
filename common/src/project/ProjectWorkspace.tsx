@@ -18,7 +18,7 @@ import { type WorkspaceStoreHook } from '../workspace/context'
 import {
     ActionContextProvider,
     ActionHotkeyBridge,
-    ActionRegistryProvider,
+    EditorActions,
     NativeMenuBridge,
     useProjectActions,
     useRegisterAction,
@@ -41,6 +41,7 @@ import { ProjectTopBar } from './ProjectTopBar'
 import { type AnyEditorDefinition, type ToolDefinition } from './registry'
 import { RegistryProvider, useTabRegistry, useTools } from './registry-context'
 import { SearchActions, SearchPopup } from './search'
+import { ProjectServicesProvider, ServicesActionRegistryAdapter } from './services-context'
 import { filesTool } from './tools/files'
 import { lspLogTool } from './tools/lsp-log'
 
@@ -78,16 +79,18 @@ export function ProjectWorkspace() {
                         <DocumentStoreProvider>
                             <PendingFilesProvider>
                                 <ProjectEventsProvider projectId={PROJECT_ID}>
-                                    <ActionRegistryProvider>
-                                        <TooltipProvider>
-                                            <ProjectGate>
-                                                <LuauLspProvider>
-                                                    <LspBufferBridge />
-                                                    <ProjectWorkspaceInner />
-                                                </LuauLspProvider>
-                                            </ProjectGate>
-                                        </TooltipProvider>
-                                    </ActionRegistryProvider>
+                                    <ProjectServicesProvider>
+                                        <ServicesActionRegistryAdapter>
+                                            <TooltipProvider>
+                                                <ProjectGate>
+                                                    <LuauLspProvider>
+                                                        <LspBufferBridge />
+                                                        <ProjectWorkspaceInner />
+                                                    </LuauLspProvider>
+                                                </ProjectGate>
+                                            </TooltipProvider>
+                                        </ServicesActionRegistryAdapter>
+                                    </ProjectServicesProvider>
                                 </ProjectEventsProvider>
                             </PendingFilesProvider>
                         </DocumentStoreProvider>
@@ -153,6 +156,7 @@ function ProjectWorkspaceInner() {
             <div className='bg-background text-foreground flex h-svh w-full flex-col overflow-hidden'>
                 <NewFileAction useStore={useStore} />
                 <CloseFocusedTabAction useStore={useStore} />
+                <EditorActions useStore={useStore} />
                 <SearchActions />
                 <ActionHotkeyBridge />
                 <NativeMenuBridge />

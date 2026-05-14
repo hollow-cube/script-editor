@@ -1,5 +1,6 @@
-import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
 
+import { useProjectServices } from '../project/services-context'
 import { definitionFiles } from './definitionFiles'
 import { docModuleAliases, docModuleLspFiles } from './docModules'
 import { LspClient, type LspState } from './LspClient'
@@ -9,15 +10,15 @@ export type LuauLspContextValue = {
     client: LspClient | null
 }
 
-const LuauLspContext = createContext<LuauLspContextValue | null>(null)
-
 const defaultWorkerFactory = (): Worker =>
     new Worker(new URL('./luau-lsp.worker.ts', import.meta.url), { type: 'module' })
 
+/** Owns the Luau LSP worker lifecycle. Constructs the `LspClient`, starts it,
+ *  pushes it into `ProjectServices.lsp.luau`, and tears it down on unmount.
+ *  Must be mounted inside a `ProjectServicesProvider`. */
 export function LuauLspProvider({ children }: { children: ReactNode }) {
+    const services = useProjectServices()
     const startedRef = useRef(false)
-    const [status, setStatus] = useState<LspState>('starting')
-    const [client, setClient] = useState<LspClient | null>(null)
 
     useEffect(() => {
         // React strict mode double-invokes effects in dev; guard so we don't
@@ -47,9 +48,7 @@ export function LuauLspProvider({ children }: { children: ReactNode }) {
         })
 
         const instance = new LspClient(worker)
-        const unsubscribe = instance.onStateChange(setStatus)
-        setStatus(instance.getState())
-        setClient(instance)
+        services.setLuauClient(instance)
 
         const files = docModuleLspFiles()
         const defFilePaths = definitionFiles.map((f) => f.path)
@@ -66,20 +65,22 @@ export function LuauLspProvider({ children }: { children: ReactNode }) {
             })
 
         return () => {
-            unsubscribe()
-            setClient(null)
+            services.setLuauClient(null)
             void instance.stop().finally(() => {
                 worker.terminate()
             })
             startedRef.current = false
         }
-    }, [])
+    }, [services])
 
-    return <LuauLspContext.Provider value={{ status, client }}>{children}</LuauLspContext.Provider>
+    return <>{children}</>
 }
 
 export function useLuauLsp(): LuauLspContextValue {
-    const ctx = useContext(LuauLspContext)
-    if (!ctx) throw new Error('useLuauLsp must be used within a LuauLspProvider')
-    return ctx
+    const services = useProjectServices()
+    return useSyncExternalStore(
+        (cb) => services.subscribeLuauLsp(cb),
+        () => services.getLuauLspSnapshot(),
+        () => services.getLuauLspSnapshot(),
+    )
 }

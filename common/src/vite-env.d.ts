@@ -11,3 +11,10 @@ declare module '*.luau?raw' {
     const src: string
     export default src
 }
+
+// Vite's `*?url` glob doesn't always resolve package-subpath imports, so be
+// explicit for the WASM binary shipped by `@johnnymorganz/stylua`.
+declare module '*.wasm?url' {
+    const src: string
+    export default src
+}

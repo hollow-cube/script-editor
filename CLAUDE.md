@@ -112,10 +112,11 @@ Run all commands from the repo root unless noted.
 - `bun run dev:desktop` — `wails3 dev` (Vite on port 9245 + Go host); requires `wails3` CLI and Go installed
 - `bun run build:web` / `bun run build:desktop`
 - `bun run typecheck` — runs `tsc --noEmit` across every workspace via `bun --filter '*' typecheck`
+- `bun run test` — runs `bun test` across every workspace via `bun --filter '*' test`
 - `bun run lint` / `bun run lint:fix` — oxlint
 - `bun run format` / `bun run format:check` — oxfmt
 
-**No test framework is configured.** Do not add `vitest`/`jest`/`bun test` invocations unless the user asks — there are no test files to run.
+**Tests use `bun test`.** Scope is the model layer only: Zustand stores, plain-TS registries / classes, pure helpers, persistence migrations. Co-locate `*.test.ts` next to source. Do **not** add tests for React components, CodeMirror integration, the LSP worker end-to-end, or the Wails / native-menu bridge — those stay manually verified. Tests import from `bun:test` (`import { test, expect, describe, beforeEach } from 'bun:test'`). Do not introduce Vitest or Jest.
 
 Workspace-scoped: `bun --filter @hollowcube/web <script>` (e.g. `typecheck`, `dev`, `build`).
 

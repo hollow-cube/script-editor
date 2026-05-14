@@ -1,5 +1,6 @@
 import { definitionFiles, docModules } from '../../lsp'
 import { type EditorDefinition } from '../registry'
+import { DOCS_EDITOR_KIND } from './docs-kind'
 
 // Read-only "documentation" editor for synthetic LSP-known modules: engine
 // library modules (e.g. `@mapmaker/store`) and the configurable definition
@@ -7,7 +8,8 @@ import { type EditorDefinition } from '../registry'
 // synthetic target hops to the existing tab. v1 renders a placeholder; the
 // real docs UI will replace `<DocsTab>` later.
 
-export const DOCS_EDITOR_KIND = 'editor:docs'
+// Re-export for existing import sites (the canonical home is `./docs-kind`).
+export { DOCS_EDITOR_KIND }
 
 export type DocsEditorPayload = {
     /** Stable identifier for the synthetic module. Matches the doc-module
