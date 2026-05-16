@@ -1,3 +1,4 @@
+import { type EngineApiDoc } from '../../engine-api'
 import { type LspClient } from '../LspClient'
 import { lspCompletion } from './completion'
 import {
@@ -24,6 +25,9 @@ export type LspExtensionsOptions = {
      *  declaration falls back to `textDocument/references` instead of moving
      *  the cursor in place. */
     onShowReferences?: ReferencesShowHandler
+    /** Accessor for the loaded engine API doc. When it returns non-null, the
+     *  hover override renders our own docs for engine symbols. */
+    getEngineApiDoc: () => EngineApiDoc | null
 }
 
 // Compose the full set of LSP-driven CodeMirror extensions for one open
@@ -34,7 +38,7 @@ export type LspExtensionsOptions = {
 export function lspExtensions(opts: LspExtensionsOptions) {
     return [
         lspDiagnostics(opts.client, opts.uri),
-        lspHover(opts.client, opts.uri),
+        lspHover(opts.client, opts.uri, opts.resolve, opts.getEngineApiDoc),
         lspCompletion(opts.client, opts.uri),
         lspSignatureHelp(opts.client, opts.uri),
         lspGotoDefinition(

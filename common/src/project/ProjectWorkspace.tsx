@@ -4,6 +4,7 @@ import { HCClient, HCClientProvider, useHCClient } from '@hollowcube/api'
 import { TooltipProvider } from '@hollowcube/design-system'
 
 import { LanguageProvider } from '../editor/languages'
+import { EngineApiProvider } from '../engine-api'
 import { LuauLspProvider } from '../lsp'
 import { LspActions, LspUiOverlay, LspUiProvider } from '../lsp/ui'
 import { usePlatform } from '../platform'
@@ -87,29 +88,31 @@ export function ProjectWorkspace() {
                 )}
             >
                 <RegistryProvider tools={TOOLS} editors={EDITORS}>
-                    <LanguageProvider>
-                        <DocumentStoreProvider>
-                            <PendingFilesProvider>
-                                <ProjectEventsProvider projectId={PROJECT_ID}>
-                                    <ProjectServicesProvider>
-                                        <ServicesActionRegistryAdapter>
-                                            <TooltipProvider>
-                                                <ProjectGate>
-                                                    <LuauLspProvider>
-                                                        <LspUiProvider>
-                                                            <LspBufferBridge />
-                                                            <LspWatchedFilesBridge />
-                                                            <ProjectWorkspaceInner />
-                                                        </LspUiProvider>
-                                                    </LuauLspProvider>
-                                                </ProjectGate>
-                                            </TooltipProvider>
-                                        </ServicesActionRegistryAdapter>
-                                    </ProjectServicesProvider>
-                                </ProjectEventsProvider>
-                            </PendingFilesProvider>
-                        </DocumentStoreProvider>
-                    </LanguageProvider>
+                    <EngineApiProvider>
+                        <LanguageProvider>
+                            <DocumentStoreProvider>
+                                <PendingFilesProvider>
+                                    <ProjectEventsProvider projectId={PROJECT_ID}>
+                                        <ProjectServicesProvider>
+                                            <ServicesActionRegistryAdapter>
+                                                <TooltipProvider>
+                                                    <ProjectGate>
+                                                        <LuauLspProvider>
+                                                            <LspUiProvider>
+                                                                <LspBufferBridge />
+                                                                <LspWatchedFilesBridge />
+                                                                <ProjectWorkspaceInner />
+                                                            </LspUiProvider>
+                                                        </LuauLspProvider>
+                                                    </ProjectGate>
+                                                </TooltipProvider>
+                                            </ServicesActionRegistryAdapter>
+                                        </ProjectServicesProvider>
+                                    </ProjectEventsProvider>
+                                </PendingFilesProvider>
+                            </DocumentStoreProvider>
+                        </LanguageProvider>
+                    </EngineApiProvider>
                 </RegistryProvider>
             </ProjectLoader>
         </HCClientProvider>

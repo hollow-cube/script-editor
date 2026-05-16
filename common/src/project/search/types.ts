@@ -5,13 +5,14 @@ import type { ProjectFile } from '@hollowcube/api'
 
 import type { Action } from '../actions/types'
 
-export type SearchTab = 'all' | 'actions' | 'files' | 'text' | 'symbols'
+export type SearchTab = 'all' | 'actions' | 'files' | 'text' | 'symbols' | 'docs'
 
 export const SEARCH_TABS: readonly { id: SearchTab; label: string }[] = [
     { id: 'all', label: 'All' },
     { id: 'actions', label: 'Actions' },
     { id: 'files', label: 'Files' },
     { id: 'symbols', label: 'Symbols' },
+    { id: 'docs', label: 'Docs' },
     { id: 'text', label: 'Text Search' },
 ] as const
 
@@ -64,6 +65,17 @@ export type SearchResult =
               line: number
               column: number
           }
+      }
+    | {
+          kind: 'docs'
+          id: string
+          title: string
+          subtitle?: string
+          matches: number[]
+          score: number
+          /** `moduleId` is a library key or global moduleName; `symbol` is the
+           *  focused member, or `null` for the module itself. */
+          data: { moduleId: string; symbol: string | null }
       }
 
 export type ResultGroup = {

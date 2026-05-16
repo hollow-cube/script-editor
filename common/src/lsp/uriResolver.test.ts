@@ -1,6 +1,29 @@
-import { describe, expect, test } from 'bun:test'
+import { beforeAll, describe, expect, test } from 'bun:test'
 
+import { type EngineApiBundle } from '../engine-api'
+import { applyEngineApiModules } from './docModules'
 import { fileUriFromPath, pathFromFileUri, resolveUri, withSwappedExtension } from './uriResolver'
+
+// `docModules` / `definitionFiles` are populated from the engine API bundle;
+// seed a minimal fixture so the resolver has something to match against.
+const fixture: EngineApiBundle = {
+    doc: {
+        schemaVersion: 1,
+        kind: 'luau-engine-api',
+        globals: [],
+        libraries: {},
+        types: { global: '', modules: {} },
+    },
+    docModules: [
+        { alias: '@mapmaker/store', path: '/src/mapmaker/store.lua', content: 'return {}' },
+    ],
+    docModuleAliases: { '@mapmaker/': '/src/mapmaker/' },
+    definitionFiles: [{ path: '/definitions/global.d.luau', alias: 'global.d.luau', content: '' }],
+}
+
+beforeAll(() => {
+    applyEngineApiModules(fixture)
+})
 
 describe('pathFromFileUri', () => {
     test('strips file:// prefix and preserves leading slash', () => {
@@ -61,7 +84,8 @@ describe('resolveUri', () => {
     })
 
     test('resolves to doc-module when path matches a known module', () => {
-        // From docModules.ts — `@mapmaker/store` maps to `/src/mapmaker/store.lua`.
+        // luau-lsp reports the require()d path as `.lua`; the resolver accepts
+        // either extension and maps it back to the `.luau` doc module.
         const result = resolveUri('file:///src/mapmaker/store.lua', [])
         expect(result.kind).toBe('doc-module')
         if (result.kind === 'doc-module') {
@@ -69,13 +93,11 @@ describe('resolveUri', () => {
         }
     })
 
-    test('resolves to definition-file when path matches the project definition file', () => {
-        // From definitionFiles.ts — projectDefinitionFile lives at
-        // `/definitions/project.d.luau`.
-        const result = resolveUri('file:///definitions/project.d.luau', [])
+    test('resolves to definition-file when path matches a definition file', () => {
+        const result = resolveUri('file:///definitions/global.d.luau', [])
         expect(result.kind).toBe('definition-file')
         if (result.kind === 'definition-file') {
-            expect(result.file.alias).toBe('project.d.luau')
+            expect(result.file.alias).toBe('global.d.luau')
         }
     })
 

@@ -35,6 +35,7 @@ import {
     type LanguageEditorBinding,
 } from '../../editor/languages'
 import { fileUriFromPath } from '../../editor/languages/luau-editor-services'
+import { useEngineApi } from '../../engine-api'
 import { useLuauLsp } from '../../lsp'
 import { type Tab, useWorkspaceContext } from '../../workspace'
 import { useProjectActions } from '../actions'
@@ -209,6 +210,16 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
     // services (JSON, plaintext) simply return null below.
     const knownPaths = useMemo(() => project.files.map((f) => f.path), [project.files])
 
+    // Stable accessor for the engine API doc. The bundle resolves once, early;
+    // a getter (read via ref) lets the binding see it without being rebuilt.
+    const engineApi = useEngineApi()
+    const engineApiRef = useRef(engineApi)
+    engineApiRef.current = engineApi
+    const getEngineApiDoc = useCallback(
+        () => (engineApiRef.current.status === 'ready' ? engineApiRef.current.bundle.doc : null),
+        [],
+    )
+
     // Stable callbacks for the binding. `showUsages` derives sourceText from
     // the current document each invocation — kept here so the language module
     // doesn't need to reach into the document store.
@@ -236,8 +247,17 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
             knownPaths,
             openEditor,
             showUsages: showUsagesForBinding,
+            getEngineApiDoc,
         })
-    }, [language, effectivePath, services, knownPaths, openEditor, showUsagesForBinding])
+    }, [
+        language,
+        effectivePath,
+        services,
+        knownPaths,
+        openEditor,
+        showUsagesForBinding,
+        getEngineApiDoc,
+    ])
 
     useEffect(() => {
         return () => binding?.dispose()

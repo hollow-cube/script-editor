@@ -1,10 +1,11 @@
 import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
 
+import { useEngineApi } from '../engine-api'
 import { useDocumentStore } from '../project/documents'
 import { useProjectServices } from '../project/services-context'
 import { createApplyWorkspaceEditHandler } from './applyWorkspaceEdit'
 import { definitionFiles } from './definitionFiles'
-import { docModuleAliases, docModuleLspFiles } from './docModules'
+import { applyEngineApiModules, docModuleAliases, docModuleLspFiles } from './docModules'
 import { LspClient, type LspState } from './LspClient'
 import { startWorkspaceDiagnosticPolling } from './workspaceDiagnostics'
 
@@ -22,13 +23,20 @@ const defaultWorkerFactory = (): Worker =>
 export function LuauLspProvider({ children }: { children: ReactNode }) {
     const services = useProjectServices()
     const documentStore = useDocumentStore()
+    const engineApi = useEngineApi()
     const startedRef = useRef(false)
 
     useEffect(() => {
+        // The synthetic modules / definition file come from the engine API
+        // bundle; don't start the worker until it's loaded. On error, skip the
+        // LSP entirely — the editor stays usable, just without engine types.
+        if (engineApi.status !== 'ready') return
         // React strict mode double-invokes effects in dev; guard so we don't
         // spawn a second worker on the immediate re-mount.
         if (startedRef.current) return
         startedRef.current = true
+
+        applyEngineApiModules(engineApi.bundle)
 
         const worker = defaultWorkerFactory()
 
@@ -84,7 +92,7 @@ export function LuauLspProvider({ children }: { children: ReactNode }) {
             })
             startedRef.current = false
         }
-    }, [documentStore, services])
+    }, [documentStore, services, engineApi])
 
     return <>{children}</>
 }

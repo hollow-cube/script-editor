@@ -1,14 +1,25 @@
 import { hoverTooltip, tooltips, type EditorView } from '@codemirror/view'
 import type { Diagnostic as LspDiagnostic, Hover } from 'vscode-languageserver-types'
 
+import {
+    findDocNode,
+    findMember,
+    memberDescription,
+    memberSignature,
+    type EngineApiDoc,
+} from '../../engine-api'
 import { type LspClient } from '../LspClient'
 import { markdownFromContents } from '../protocol'
+import { probeDefinition, type DefinitionResolver } from './definition'
 import { offsetToPosition, rangeToOffsets } from './lspUtils'
 
 // LSP hover tooltip. Renders any diagnostics that overlap the cursor above
-// the type info with a separator between, then the LSP hover markdown.
-// Styling lives in editor/extensions/theme.ts so it tracks the app's popover
-// tokens (background, border, shadow, radius).
+// the type info with a separator between, then the hover body.
+//
+// For engine symbols (anything that resolves into a synthetic `@mapmaker/*`
+// module or the globals definition file) we render OUR docs from the bundle
+// instead of the LSP's type string. User-defined symbols fall through to the
+// LSP hover unchanged. Styling lives in editor/extensions/theme.ts.
 
 type Severity = 'error' | 'warning' | 'info' | 'hint'
 
@@ -122,7 +133,72 @@ function insetTooltipSpace(view: EditorView) {
     }
 }
 
-export function lspHover(client: LspClient, uri: string) {
+function isWordChar(c: string | undefined): boolean {
+    return !!c && /[A-Za-z0-9_]/.test(c)
+}
+
+/** The bare `[A-Za-z0-9_]` identifier under `pos` (the member name, without
+ *  any `.`/`:` qualifier). */
+function identifierAt(view: EditorView, pos: number): string {
+    const line = view.state.doc.lineAt(pos)
+    const text = line.text
+    let s = pos - line.from
+    let e = pos - line.from
+    while (s > 0 && isWordChar(text[s - 1])) s--
+    while (e < text.length && isWordChar(text[e])) e++
+    return text.slice(s, e)
+}
+
+/** Build engine-doc hover blocks for `symbol`, or `null` if nothing matched.
+ *  Resolves both library modules (`@mapmaker/...`) and the globals definition
+ *  file (where `symbol` is a global name or a member of one). */
+function engineHoverBlocks(
+    doc: EngineApiDoc,
+    target: ReturnType<DefinitionResolver>,
+    symbol: string,
+): string[] | null {
+    if (target.kind === 'doc-module') {
+        const node = findDocNode(doc, target.module.alias)
+        if (!node) return null
+        const member = symbol ? findMember(node, symbol) : undefined
+        if (member) {
+            return [
+                '```\n' + memberSignature(member) + '\n```',
+                memberDescription(member) ?? '',
+            ].filter(Boolean)
+        }
+        return node.description
+            ? ['```\n' + node.moduleName + '\n```', node.description]
+            : ['```\n' + node.moduleName + '\n```']
+    }
+
+    if (target.kind === 'definition-file') {
+        if (!symbol) return null
+        const global = doc.globals.find((g) => g.moduleName === symbol)
+        if (global) {
+            return global.description
+                ? ['```\n' + global.moduleName + '\n```', global.description]
+                : ['```\n' + global.moduleName + '\n```']
+        }
+        for (const g of doc.globals) {
+            const member = findMember(g, symbol)
+            if (member) {
+                return [
+                    '```\n' + memberSignature(member) + '\n```',
+                    memberDescription(member) ?? '',
+                ].filter(Boolean)
+            }
+        }
+    }
+    return null
+}
+
+export function lspHover(
+    client: LspClient,
+    uri: string,
+    resolve: DefinitionResolver,
+    getEngineApiDoc: () => EngineApiDoc | null,
+) {
     const hover = hoverTooltip(async (view, pos) => {
         const lineInfo = view.state.doc.lineAt(pos)
         const lineText = lineInfo.text
@@ -139,18 +215,45 @@ export function lspHover(client: LspClient, uri: string) {
             lspPos.character,
         )
 
-        let result: Hover | null = null
-        if (start !== end) {
-            try {
-                result = await client.sendRequest<Hover | null>('textDocument/hover', {
-                    textDocument: { uri },
-                    position: lspPos,
-                })
-            } catch {
-                result = null
+        // Probe the symbol's origin and request the LSP hover in parallel so
+        // engine-symbol detection doesn't add a serial round-trip.
+        const probePromise = start !== end ? probeDefinition(view, client, uri, pos) : null
+        const lspHoverPromise =
+            start !== end
+                ? client
+                      .sendRequest<Hover | null>('textDocument/hover', {
+                          textDocument: { uri },
+                          position: lspPos,
+                      })
+                      .catch(() => null)
+                : null
+
+        // Engine override: if the symbol resolves into a synthetic module /
+        // the globals definition file, render our own docs.
+        const doc = getEngineApiDoc()
+        if (probePromise && doc) {
+            const probe = await probePromise
+            if (probe) {
+                const resolved = resolve(probe.uri)
+                if (resolved.kind === 'doc-module' || resolved.kind === 'definition-file') {
+                    const blocks = engineHoverBlocks(doc, resolved, identifierAt(view, pos))
+                    if (blocks && (blocks.length > 0 || diagnostics.length > 0)) {
+                        return {
+                            pos: start === end ? pos : start,
+                            end: start === end ? pos + 1 : end,
+                            above: false,
+                            strictSide: true,
+                            create() {
+                                return { dom: buildHoverDom(diagnostics, blocks) }
+                            },
+                        }
+                    }
+                }
             }
         }
 
+        // Fall back to the LSP hover for user-defined symbols.
+        const result = lspHoverPromise ? await lspHoverPromise : null
         const md = result?.contents ? markdownFromContents(result.contents) : []
         if (diagnostics.length === 0 && md.length === 0) return null
 

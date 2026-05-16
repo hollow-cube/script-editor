@@ -6,7 +6,7 @@ import {
     type KeyboardEvent as ReactKeyboardEvent,
     type ReactNode,
 } from 'react'
-import { FileIcon, ListTreeIcon } from 'lucide-react'
+import { BookIcon, FileIcon, ListTreeIcon } from 'lucide-react'
 
 import {
     cn,
@@ -22,9 +22,11 @@ import { listAllLanguageMimes, useLanguages } from '../../editor/languages'
 import { type WorkspaceStoreHook } from '../../workspace/context'
 import { useProjectActionsForStore } from '../actions/project-actions'
 import { useRunAction } from '../actions/registry'
+import { DOCS_EDITOR_KIND } from '../editors/docs-kind'
 import { isTextContentType } from '../tools/files-tree'
 import { useSearchStore } from './search-store'
 import { useActionResults } from './sources/actions'
+import { useDocsResults } from './sources/docs'
 import { useFileResults } from './sources/files'
 import { useWorkspaceSymbolResults } from './sources/symbols'
 import { useTextSearchResults } from './sources/text'
@@ -332,6 +334,7 @@ function resultIcon(item: SearchResult) {
     if (item.kind === 'action' && item.icon) return item.icon
     if (item.kind === 'file') return <FileIcon />
     if (item.kind === 'symbol') return <ListTreeIcon />
+    if (item.kind === 'docs') return <BookIcon />
     return null
 }
 
@@ -351,6 +354,8 @@ function useResults(
 } {
     const actions = useActionResults(query, tab === 'all' ? 5 : 50)
     const files = useFileResults(query, tab === 'all' ? 5 : 50)
+    // Docs are an in-memory fuzzy match (no network) — always computed.
+    const docs = useDocsResults(query, tab === 'all' ? 5 : 50)
     // Workspace symbols query the LSP — only fire when the symbol tab is
     // active or All is selected, otherwise the user pays for the round-trip
     // while filtering Actions / Files.
@@ -372,6 +377,9 @@ function useResults(
         if (tab === 'symbols') {
             return [{ kind: 'symbol', label: 'Symbols', items: symbols }]
         }
+        if (tab === 'docs') {
+            return [{ kind: 'docs', label: 'Docs', items: docs }]
+        }
         if (tab === 'text') {
             return [{ kind: 'text', label: 'Text', items: textState.results }]
         }
@@ -380,9 +388,10 @@ function useResults(
             { kind: 'action', label: 'Actions', items: actions },
             { kind: 'file', label: 'Files', items: files },
             { kind: 'symbol', label: 'Symbols', items: symbols.slice(0, 5) },
+            { kind: 'docs', label: 'Docs', items: docs.slice(0, 5) },
             { kind: 'text', label: 'Text', items: textState.results.slice(0, 5) },
         ]
-    }, [tab, actions, files, symbols, textState.results])
+    }, [tab, actions, files, symbols, docs, textState.results])
 
     return { groups, textState }
 }
@@ -480,6 +489,17 @@ function useInvoke(close: () => void, useStore: WorkspaceStoreHook) {
                     close()
                     return
                 }
+                case 'docs': {
+                    const { moduleId, symbol } = result.data
+                    openEditor({
+                        kind: DOCS_EDITOR_KIND,
+                        payload: { moduleId, symbol },
+                        identityKey: 'moduleId',
+                        title: result.title,
+                    })
+                    close()
+                    return
+                }
             }
         },
         [close, openEditor, runAction, languageMimes],
@@ -496,6 +516,8 @@ function placeholderFor(tab: SearchTab): string {
             return 'Go to file…'
         case 'symbols':
             return 'Go to symbol…'
+        case 'docs':
+            return 'Search docs…'
         case 'text':
             return 'Search in files…'
     }

@@ -71,7 +71,7 @@ const EMPTY_SNAPSHOT: EditorServices = {
 
 /** Construct a Luau LSP binding for a single editor tab. */
 export function createLuauEditorBinding(deps: LanguageEditorDeps): LanguageEditorBinding {
-    const { services, uri, knownPaths, openEditor, showUsages } = deps
+    const { services, uri, knownPaths, openEditor, showUsages, getEngineApiDoc } = deps
 
     let snapshot: EditorServices = EMPTY_SNAPSHOT
     const listeners = new Set<() => void>()
@@ -91,6 +91,7 @@ export function createLuauEditorBinding(deps: LanguageEditorDeps): LanguageEdito
             start: { line: number; character: number }
             end: { line: number; character: number }
         },
+        symbol?: string | null,
     ) => {
         if (resolved.kind === 'file') {
             const payload: Record<string, unknown> = { path: resolved.path }
@@ -106,13 +107,21 @@ export function createLuauEditorBinding(deps: LanguageEditorDeps): LanguageEdito
         } else if (resolved.kind === 'doc-module') {
             openEditor({
                 kind: DOCS_EDITOR_KIND,
-                payload: { moduleId: resolved.module.alias, kind: 'library' },
+                payload: {
+                    moduleId: resolved.module.alias,
+                    kind: 'library',
+                    symbol: symbol ?? null,
+                },
                 identityKey: 'moduleId',
             })
         } else if (resolved.kind === 'definition-file') {
             openEditor({
                 kind: DOCS_EDITOR_KIND,
-                payload: { moduleId: resolved.file.alias, kind: 'definition-file' },
+                payload: {
+                    moduleId: resolved.file.alias,
+                    kind: 'definition-file',
+                    symbol: symbol ?? null,
+                },
                 identityKey: 'moduleId',
             })
         }
@@ -151,6 +160,7 @@ export function createLuauEditorBinding(deps: LanguageEditorDeps): LanguageEdito
                 resolve: resolveTargetUri,
                 onDefinitionOpen: handleDefinitionOpen,
                 onShowReferences: handleShowReferences,
+                getEngineApiDoc,
             }) as Extension[]
             cachedExtensionsClient = client as unknown as object
         }

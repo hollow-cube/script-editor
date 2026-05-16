@@ -1,12 +1,11 @@
-// Project-level definition file: a single synthetic .d.luau the LSP treats
-// as ambient type definitions (like a TypeScript .d.ts). The file has no
-// counterpart in the project filesystem — its content lives in memory and is
+// Project-level definition file(s): synthetic `.d.luau` files the LSP treats
+// as ambient type definitions (like TypeScript `.d.ts`). They have no
+// counterpart in the project filesystem — content lives in memory and is
 // pre-loaded into the worker's WASI filesystem before LSP traffic begins.
 //
-// Initial content mirrors @core/standard.d.luau so the mechanism is exercised
-// end-to-end even before project-specific definitions exist.
-
-import standardDluauContent from './standard.d.luau?raw'
+// Content comes from the engine API bundle (`types.global`): the array is
+// populated in place by `applyEngineApiModules` in `docModules.ts`. It is
+// empty when the bundle has no globals (`types.global === ''`).
 
 export type DefinitionFile = {
     /** Virtual absolute path used by the LSP and routed back into the docs
@@ -18,14 +17,9 @@ export type DefinitionFile = {
     content: string
 }
 
-export const projectDefinitionFile: DefinitionFile = {
-    path: '/definitions/project.d.luau',
-    alias: 'project.d.luau',
-    content: standardDluauContent,
-}
-
-/** All synthetic definition files (currently just one). */
-export const definitionFiles: DefinitionFile[] = [projectDefinitionFile]
+/** Populated by `applyEngineApiModules`. Empty until the bundle loads (and
+ *  stays empty when the bundle declares no globals). */
+export const definitionFiles: DefinitionFile[] = []
 
 export function findDefinitionFileByPath(path: string): DefinitionFile | undefined {
     return definitionFiles.find((f) => f.path === path)

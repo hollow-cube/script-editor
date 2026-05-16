@@ -1,6 +1,7 @@
 import { type Extension } from '@codemirror/state'
 import { type EditorView } from '@codemirror/view'
 
+import { type EngineApiDoc } from '../../engine-api'
 import { type OpenEditorArgs } from '../../project/actions/project-actions'
 import { type ProjectServices } from '../../project/services'
 import { type UsageMatch } from '../components/UsagesPopup'
@@ -87,6 +88,11 @@ export type LanguageEditorDeps = {
         anchorPos: number,
         sourceRange: { from: number; to: number },
     ) => void
+    /** The loaded engine API doc, or `null` until the bundle resolves. A
+     *  getter (not a value) so the binding reads the latest without being
+     *  rebuilt when the bundle loads. The Luau binding uses it to render its
+     *  own hover docs for engine symbols. */
+    getEngineApiDoc: () => EngineApiDoc | null
 }
 
 export type LanguageDefinition = {

@@ -23,14 +23,10 @@ export {
     docModuleAliases,
     docModuleLspFiles,
     findDocModuleByPath,
+    applyEngineApiModules,
     type DocModule,
 } from './docModules'
-export {
-    definitionFiles,
-    projectDefinitionFile,
-    findDefinitionFileByPath,
-    type DefinitionFile,
-} from './definitionFiles'
+export { definitionFiles, findDefinitionFileByPath, type DefinitionFile } from './definitionFiles'
 export {
     resolveUri,
     pathFromFileUri,

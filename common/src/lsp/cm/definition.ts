@@ -12,8 +12,65 @@ export type DefinitionResolver = (uri: string) => ResolvedUri
  *  Implementations route based on `resolved.kind`. */
 /** Called when goto-definition lands somewhere outside the current file.
  *  `targetRange` is the LSP `Range` of the target (line/character pairs);
- *  pass it to the new editor so it can flash-highlight the landing spot. */
-export type DefinitionOpenHandler = (resolved: ResolvedUri, targetRange?: LspRange) => void
+ *  pass it to the new editor so it can flash-highlight the landing spot.
+ *  `symbol` is the engine identifier the target lands on (for the docs
+ *  editor); `null` when the target is the module itself (e.g. the `require`
+ *  call) or no identifier could be derived. */
+export type DefinitionOpenHandler = (
+    resolved: ResolvedUri,
+    targetRange?: LspRange,
+    symbol?: string | null,
+) => void
+
+// Keywords/structural tokens that mean "you landed on the module, not a
+// member" (clicking the `require` itself, the trailing `return`, etc.).
+const NON_SYMBOL_TOKENS = new Set([
+    'return',
+    'local',
+    'function',
+    'export',
+    'type',
+    'end',
+    'require',
+    'nil',
+    'true',
+    'false',
+])
+
+function isWordChar(c: string | undefined): boolean {
+    return !!c && /[A-Za-z0-9_]/.test(c)
+}
+
+function identifierAtRange(content: string, range: LspRange): string | null {
+    const line = content.split('\n')[range.start.line]
+    if (line === undefined) return null
+
+    if (range.start.line === range.end.line) {
+        const slice = line.slice(range.start.character, range.end.character)
+        if (/^[A-Za-z_]\w*$/.test(slice) && !NON_SYMBOL_TOKENS.has(slice)) return slice
+    }
+    let s = range.start.character
+    let e = range.start.character
+    while (s > 0 && isWordChar(line[s - 1])) s--
+    while (e < line.length && isWordChar(line[e])) e++
+    const word = line.slice(s, e)
+    if (/^[A-Za-z_]\w*$/.test(word) && !NON_SYMBOL_TOKENS.has(word)) return word
+    return null
+}
+
+/** Derive the engine symbol a cross-file target lands on, for the docs editor.
+ *  Only engine targets (synthetic modules / definition files) carry content
+ *  we can read here; project files don't need a symbol. */
+function symbolForResolved(resolved: ResolvedUri, targetRange?: LspRange): string | null {
+    if (!targetRange) return null
+    if (resolved.kind === 'doc-module') {
+        return identifierAtRange(resolved.module.content, targetRange)
+    }
+    if (resolved.kind === 'definition-file') {
+        return identifierAtRange(resolved.file.content, targetRange)
+    }
+    return null
+}
 
 /** Match the structure of the inline find-usages popup so the host can render
  *  references as if they came from the local string-scan path. The host owns
@@ -53,6 +110,48 @@ function targetUriOf(loc: Location | LocationLink): string {
 
 function targetRangeOf(loc: Location | LocationLink) {
     return 'targetUri' in loc ? loc.targetSelectionRange : loc.range
+}
+
+/** The cross-file target a symbol resolves to, if any. Shared by go-to-def
+ *  and the hover override so both detect engine symbols identically. */
+export type ProbeTarget = { uri: string; range: LspRange }
+
+async function requestFirstLocation(
+    view: EditorView,
+    client: LspClient,
+    method: 'textDocument/definition' | 'textDocument/typeDefinition',
+    uri: string,
+    pos: number,
+): Promise<ProbeTarget | null> {
+    let result: DefResult = null
+    try {
+        result = await client.sendRequest<DefResult>(method, {
+            textDocument: { uri },
+            position: offsetToPosition(view.state.doc, pos),
+        })
+    } catch {
+        return null
+    }
+    const first = asLocations(result)[0]
+    if (!first) return null
+    return { uri: targetUriOf(first), range: targetRangeOf(first) }
+}
+
+/** Resolve the symbol at `pos` to its cross-file definition/type target
+ *  without navigating. Returns `null` for same-file results (locals / the
+ *  clicked declaration) — only cross-file targets are interesting for the
+ *  hover override. */
+export async function probeDefinition(
+    view: EditorView,
+    client: LspClient,
+    uri: string,
+    pos: number,
+): Promise<ProbeTarget | null> {
+    const target =
+        (await requestFirstLocation(view, client, 'textDocument/definition', uri, pos)) ??
+        (await requestFirstLocation(view, client, 'textDocument/typeDefinition', uri, pos))
+    if (!target || target.uri === uri) return null
+    return target
 }
 
 /** Run a JetBrains-style goto navigation chain at `pos`. Behavior:
@@ -136,7 +235,8 @@ async function tryNavigate(
         return true
     }
 
-    onOpen(resolve(targetUri), targetRange)
+    const resolved = resolve(targetUri)
+    onOpen(resolved, targetRange, symbolForResolved(resolved, targetRange))
     return true
 }
 
