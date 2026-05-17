@@ -5,7 +5,8 @@ import { useDocumentStore } from '../project/documents'
 import { useProjectServices } from '../project/services-context'
 import { createApplyWorkspaceEditHandler } from './applyWorkspaceEdit'
 import { definitionFiles } from './definitionFiles'
-import { applyEngineApiModules, docModuleAliases, docModuleLspFiles } from './docModules'
+import { applyEngineApiModules, docModuleAliases, docModuleLspFiles, docModules } from './docModules'
+import { loadLuauFFlags } from './fflags'
 import { LspClient, type LspState } from './LspClient'
 import { startWorkspaceDiagnosticPolling } from './workspaceDiagnostics'
 
@@ -48,10 +49,16 @@ export function LuauLspProvider({ children }: { children: ReactNode }) {
             luaurcAliases[cleanKey] = target
         }
 
-        const syntheticFiles = definitionFiles.map((f) => ({
-            path: f.path,
-            content: f.content,
-        }))
+        // Both definition files AND doc modules must live on the worker's
+        // virtual filesystem: luau-lsp's file resolver reads required-module
+        // source via wasi fopen, so transitive relative requires inside the
+        // synthetic modules (e.g. `@mapmaker/players` does `require("./init")`
+        // / `require("./player")`) only resolve when those files exist on the
+        // FS — didOpen alone isn't enough for that resolution.
+        const syntheticFiles = [
+            ...definitionFiles.map((f) => ({ path: f.path, content: f.content })),
+            ...docModules.map((m) => ({ path: m.path, content: m.content })),
+        ]
 
         worker.postMessage({
             __configure: true,
@@ -67,13 +74,16 @@ export function LuauLspProvider({ children }: { children: ReactNode }) {
         const defFilePaths = definitionFiles.map((f) => f.path)
 
         let stopWorkspaceDiag: (() => void) | null = null
-        void instance
-            .start({
-                aliases: docModuleAliases,
-                files,
-                definitionFiles: defFilePaths,
-                trace: 'off',
-            })
+        void loadLuauFFlags()
+            .then((fflags) =>
+                instance.start({
+                    aliases: docModuleAliases,
+                    files,
+                    definitionFiles: defFilePaths,
+                    fflags,
+                    trace: 'off',
+                }),
+            )
             .then(() => {
                 if (instance.getState() === 'running') {
                     stopWorkspaceDiag = startWorkspaceDiagnosticPolling(instance)

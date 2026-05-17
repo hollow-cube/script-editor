@@ -22,7 +22,7 @@ import { type ToolDefinition } from '../registry'
 
 export const LSP_LOG_TOOL_KIND = 'tool:lsp-log'
 
-type Tab = 'log' | 'rpc'
+type Tab = 'log' | 'rpc' | 'config'
 
 const LEVEL_BADGE: Record<LspLogMessage['level'], string> = {
     error: 'bg-destructive/15 text-destructive',
@@ -92,9 +92,12 @@ function LspLogPane() {
                     <TabButton active={tab === 'rpc'} onClick={() => setTab('rpc')}>
                         Messages
                     </TabButton>
+                    <TabButton active={tab === 'config'} onClick={() => setTab('config')}>
+                        Config
+                    </TabButton>
                 </div>
             </div>
-            {tab === 'log' ? <LogList /> : <RpcList />}
+            {tab === 'log' ? <LogList /> : tab === 'rpc' ? <RpcList /> : <ConfigPane />}
         </div>
     )
 }
@@ -241,6 +244,54 @@ function RpcList() {
                             <RpcRow key={m.id} msg={m} />
                         ))}
                     </ul>
+                )}
+            </ScrollArea>
+        </>
+    )
+}
+
+function ConfigPane() {
+    // Re-read on LSP state changes — `settings` is populated during start().
+    const { client, status } = useLuauLsp()
+    const supportsSettings =
+        !!client && typeof (client as { getSettings?: unknown }).getSettings === 'function'
+    // `status` is in the deps so the pane refreshes once the LSP starts and
+    // `settings` becomes populated, even though the callback doesn't read it.
+    const settings = useMemo(
+        () => (supportsSettings ? client.getSettings() : null),
+        [client, status, supportsSettings],
+    )
+    const text = useMemo(() => (settings ? formatJsonPretty(settings) : ''), [settings])
+
+    if (!supportsSettings) {
+        return (
+            <>
+                <Toolbar count={0} onClear={() => {}} disabled />
+                <Empty>
+                    The LSP client doesn&apos;t expose its config yet. Reload the page to pick up
+                    the latest build.
+                </Empty>
+            </>
+        )
+    }
+
+    const empty = !settings || Object.keys(settings).length === 0
+
+    return (
+        <>
+            <Toolbar
+                count={empty ? 0 : 1}
+                onClear={() => {}}
+                onCopy={() => void copyToClipboard(text)}
+                disabled={empty}
+            />
+            <ScrollArea className='min-h-0 flex-1'>
+                {empty ? (
+                    <Empty>No config sent yet — the LSP hasn&apos;t started.</Empty>
+                ) : (
+                    <pre className='m-0 p-3 font-mono text-[0.7rem] whitespace-pre-wrap break-words'>
+                        {text}
+                    </pre>
                 )}
             </ScrollArea>
         </>

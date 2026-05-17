@@ -61,6 +61,8 @@ export type LspStartOptions = {
     files?: LspStartFile[]
     /** Synthetic definition file paths set via `luau-lsp.types.definitionFiles`. */
     definitionFiles?: string[]
+    /** Luau FFlag overrides (name -> value), applied via `luau-lsp.fflags`. */
+    fflags?: Record<string, string>
     /** LSP trace level. Default `'off'`. */
     trace?: LspTraceLevel
 }
@@ -120,6 +122,7 @@ export class LspClient {
     private workerErrorListener: ((e: ErrorEvent) => void) | null = null
     private workerMessageListener: ((e: MessageEvent) => void) | null = null
     private settings: Record<string, unknown> = {}
+    private initializationOptions: Record<string, unknown> = {}
     private logMessages: LspLogMessage[] = []
     private nextLogId = 1
     private logListeners = new Set<(messages: readonly LspLogMessage[]) => void>()
@@ -192,6 +195,14 @@ export class LspClient {
         if (next.length > LOG_BUFFER_LIMIT) next.splice(0, next.length - LOG_BUFFER_LIMIT)
         this.logMessages = next
         for (const cb of this.logListeners) cb(this.logMessages)
+    }
+
+    /** Everything the client sends the server up front: `initializationOptions`
+     *  (carries `fflags`, applied once at `initialize`) and the `luau-lsp`
+     *  `settings` (served via the config pull / `didChangeConfiguration`).
+     *  Empty until `start()` has run. */
+    getSettings(): Record<string, unknown> {
+        return { initializationOptions: this.initializationOptions, settings: this.settings }
     }
 
     getRpcMessages(): readonly LspRpcMessage[] {
@@ -313,14 +324,31 @@ export class LspClient {
         this.worker.addEventListener('error', this.workerErrorListener)
 
         const trace: LspTraceLevel = options.trace ?? 'off'
-        this.settings = {
-            'luau-lsp': {
-                trace: { server: trace },
-                types: options.definitionFiles
-                    ? { definitionFiles: options.definitionFiles }
-                    : undefined,
-            },
+        // The `luau-lsp.*` settings, served via the `workspace/configuration`
+        // pull and `didChangeConfiguration`. NOTE: FFlags do NOT belong here —
+        // luau-lsp registers them only from `initializationOptions.fflags` at
+        // `initialize` (they're process-global, set once).
+        const luauConfig = {
+            trace: { server: trace },
+            // Standard Luau (filesystem + `.luaurc`), NOT Roblox. The Roblox
+            // platform resolves string requires with Roblox semantics, which
+            // breaks `require("@mapmaker/...")` alias resolution.
+            platform: { type: 'standard' },
+            types: options.definitionFiles
+                ? { definitionFiles: options.definitionFiles }
+                : undefined,
         }
+        this.settings = { 'luau-lsp': luauConfig }
+        // `initializationOptions` is exactly `{ fflags }` — a FLAT
+        // `{ FlagName: "value" }` map — matching the official luau-lsp VS Code
+        // extension. The server applies each via `Luau::FValue` at init. The
+        // `luau-lsp.fflags.{sync,enableByDefault,override}` config keys are
+        // editor-side settings used to BUILD this map (see fflags.ts), not
+        // what the server receives.
+        const initializationOptions = {
+            fflags: options.fflags ?? { LuauSolverV2: 'true' },
+        }
+        this.initializationOptions = initializationOptions
         // Aliases are NOT pushed via this channel; the worker mounts a virtual
         // /.luaurc the resolver reads via fopen. See LuauLspContext for wiring.
         void options.aliases
@@ -332,7 +360,7 @@ export class LspClient {
                 rootUri: 'file:///',
                 workspaceFolders: [{ uri: 'file:///', name: 'project' }],
                 capabilities: clientCapabilities(),
-                initializationOptions: this.settings,
+                initializationOptions,
                 trace,
             })) as { capabilities?: ServerCapabilities }
             this.capabilities = initResult.capabilities ?? {}
