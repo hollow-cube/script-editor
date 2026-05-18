@@ -332,7 +332,7 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
     // implicitly when CodeEditor remounts the view (e.g. when `language`
     // changes). A ref forwards the latest `save` closure so the registered
     // entry always sees current state.
-    const saveRef = useRef<() => Promise<boolean>>(async () => true)
+    const saveRef = useRef<() => Promise<boolean>>(() => Promise.resolve(true))
     const lspUri = effectivePath ? fileUriFromPath(effectivePath) : undefined
     const onViewChange = useCallback(
         (view: EditorView | null) => {
@@ -386,7 +386,11 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
         const to = lspPosToOffset(text, r.endLine, r.endCharacter)
         if (to <= from) return undefined
         return { from, to }
-    }, [initialFlashLspRange, doc?.current])
+        // `doc` (not `doc.current`): the store entry is the reactive value;
+        // `.current` mutates in place without re-rendering. The flash range
+        // only needs (re)computing when the jump target changes or the doc
+        // first loads, which is exactly when `doc`'s identity changes.
+    }, [initialFlashLspRange, doc])
 
     const saveAtPath = useCallback(
         async (path: string) => {
@@ -436,7 +440,7 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
         const current = documentStore.getState().documents[docId]
         if (!current || !current.dirty) return true
         if (effectivePath) {
-            return saveAtPath(effectivePath)
+            return await saveAtPath(effectivePath)
         }
         setSavePromptOpen(true)
         return false

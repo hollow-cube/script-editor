@@ -26,9 +26,9 @@ function transient(status: number): Response {
 describe('HCClient — STAB-2 transient retry', () => {
     test('retries an idempotent GET on 503 up to 3 attempts, then surfaces it', async () => {
         let calls = 0
-        const client = makeClient(async () => {
+        const client = makeClient(() => {
             calls += 1
-            return transient(503)
+            return Promise.resolve(transient(503))
         })
         const err = await client.send('GET', '/x').catch((e) => e)
         expect(err).toBeInstanceOf(ApiError)
@@ -38,9 +38,9 @@ describe('HCClient — STAB-2 transient retry', () => {
 
     test('retries on 429 (transient) and succeeds once the server recovers', async () => {
         let calls = 0
-        const client = makeClient(async () => {
+        const client = makeClient(() => {
             calls += 1
-            return calls < 2 ? transient(429) : new Response('ok', { status: 200 })
+            return Promise.resolve(calls < 2 ? transient(429) : new Response('ok', { status: 200 }))
         })
         const res = await client.send('GET', '/x')
         expect(res.status).toBe(200)
@@ -49,9 +49,9 @@ describe('HCClient — STAB-2 transient retry', () => {
 
     test('retries a GET on a network error', async () => {
         let calls = 0
-        const client = makeClient(async () => {
+        const client = makeClient(() => {
             calls += 1
-            throw new TypeError('Failed to fetch')
+            return Promise.reject(new TypeError('Failed to fetch'))
         })
         const err = await client.send('GET', '/x').catch((e) => e)
         expect(err).toBeInstanceOf(ApiError)
@@ -61,9 +61,9 @@ describe('HCClient — STAB-2 transient retry', () => {
 
     test('does NOT retry a non-idempotent PUT — write surfaces immediately', async () => {
         let calls = 0
-        const client = makeClient(async () => {
+        const client = makeClient(() => {
             calls += 1
-            return transient(503)
+            return Promise.resolve(transient(503))
         })
         const err = await client.send('PUT', '/x', { body: 'data' }).catch((e) => e)
         expect(err).toBeInstanceOf(ApiError)
@@ -72,9 +72,9 @@ describe('HCClient — STAB-2 transient retry', () => {
 
     test('does NOT retry a non-transient 404', async () => {
         let calls = 0
-        const client = makeClient(async () => {
+        const client = makeClient(() => {
             calls += 1
-            return new Response('', { status: 404 })
+            return Promise.resolve(new Response('', { status: 404 }))
         })
         await client.send('GET', '/x').catch(() => {})
         expect(calls).toBe(1)
@@ -82,9 +82,9 @@ describe('HCClient — STAB-2 transient retry', () => {
 
     test('GET can opt out of retry via { retry: false } (SSE connect path)', async () => {
         let calls = 0
-        const client = makeClient(async () => {
+        const client = makeClient(() => {
             calls += 1
-            return transient(503)
+            return Promise.resolve(transient(503))
         })
         await client.send('GET', '/x', { retry: false }).catch(() => {})
         expect(calls).toBe(1)
@@ -128,20 +128,20 @@ describe('HCClient — STAB-1 request timeout', () => {
 
 describe('HCClient — allowedStatuses (conditional-request control flow)', () => {
     test('a 304 passes through as a Response when listed in allowedStatuses', async () => {
-        const client = makeClient(async () => new Response('', { status: 304 }))
+        const client = makeClient(() => Promise.resolve(new Response('', { status: 304 })))
         const res = await client.send('GET', '/x', { allowedStatuses: [304] })
         expect(res.status).toBe(304)
     })
 
     test('a 304 still throws an ApiError when NOT allowed', async () => {
-        const client = makeClient(async () => new Response('', { status: 304 }))
+        const client = makeClient(() => Promise.resolve(new Response('', { status: 304 })))
         const err = await client.send('GET', '/x').catch((e) => e)
         expect(err).toBeInstanceOf(ApiError)
         expect((err as ApiError).status).toBe(304)
     })
 
     test('a 412 precondition failure is NOT swallowed by an unrelated allow-list', async () => {
-        const client = makeClient(async () => new Response('', { status: 412 }))
+        const client = makeClient(() => Promise.resolve(new Response('', { status: 412 })))
         const err = await client
             .send('PUT', '/x', { body: 'b', allowedStatuses: [304] })
             .catch((e) => e)
@@ -155,19 +155,21 @@ describe('HCClient — 401 refresh path is independent of transient retry', () =
         let calls = 0
         let refreshed = 0
         const auth = {
-            getAccessToken: async () => 'tok-1',
-            createProof: async () => 'proof',
+            getAccessToken: () => Promise.resolve('tok-1'),
+            createProof: () => Promise.resolve('proof'),
             isPublic: (_p: string) => false,
-            onUnauthorized: async () => {
+            onUnauthorized: () => {
                 refreshed += 1
-                return 'tok-2'
+                return Promise.resolve('tok-2')
             },
         }
-        const impl: FetchLike = async (_url, _init) => {
+        const impl: FetchLike = (_url, _init) => {
             calls += 1
-            return calls === 1
-                ? new Response('', { status: 401 })
-                : new Response('ok', { status: 200 })
+            return Promise.resolve(
+                calls === 1
+                    ? new Response('', { status: 401 })
+                    : new Response('ok', { status: 200 }),
+            )
         }
         const client = new HCClient({
             baseUrl: 'https://api.test',

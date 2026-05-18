@@ -41,11 +41,11 @@ const KIND_LABELS: Record<number, string> = {
 /** Convert LSP snippet syntax (`$1`, `${1:default}`) to CodeMirror's. */
 function lspSnippetToCm(s: string): string {
     return s
-        .replaceAll(/\\\$/g, ' ESC_DOLLAR ')
-        .replaceAll(/\$\{(\d+):([^}]*)\}/g, (_, _i, def) => '#{' + def + '}')
-        .replaceAll(/\$\{(\d+)\}/g, '#{}')
-        .replaceAll(/\$(\d+)/g, '#{}')
-        .replaceAll(/ ESC_DOLLAR /g, '$')
+        .replaceAll(/\\\$/gu, ' ESC_DOLLAR ')
+        .replaceAll(/\$\{(\d+):([^}]*)\}/gu, (_, _i, def) => '#{' + def + '}')
+        .replaceAll(/\$\{(\d+)\}/gu, '#{}')
+        .replaceAll(/\$(\d+)/gu, '#{}')
+        .replaceAll(/ ESC_DOLLAR /gu, '$')
 }
 
 function buildCompletion(item: CompletionItem): Completion {
@@ -71,7 +71,7 @@ function buildCompletion(item: CompletionItem): Completion {
 export function lspCompletion(client: LspClient, uri: string) {
     const triggerChars = new Set(
         (client.getCapabilities()?.completionProvider?.triggerCharacters ?? []).filter(
-            (c) => c.length > 0 && !/\s/.test(c),
+            (c) => c.length > 0 && !/\s/u.test(c),
         ),
     )
 
@@ -80,7 +80,7 @@ export function lspCompletion(client: LspClient, uri: string) {
         // (`.` / `:`) stays in the doc and is NOT part of the prefix used to
         // filter completion options — otherwise CM6 would try to match e.g.
         // `defineState` against the prefix `store.` and reject every option.
-        const word = ctx.matchBefore(/\w+/)
+        const word = ctx.matchBefore(/\w+/u)
         const lastChar = ctx.state.doc.sliceString(Math.max(0, ctx.pos - 1), ctx.pos)
         const isTrigger = triggerChars.has(lastChar)
         if (!ctx.explicit && !isTrigger && (!word || word.from === word.to)) return null
@@ -103,7 +103,7 @@ export function lspCompletion(client: LspClient, uri: string) {
         return {
             from,
             options: items.map(buildCompletion),
-            validFor: /^\w*$/,
+            validFor: /^\w*$/u,
         }
     }
 

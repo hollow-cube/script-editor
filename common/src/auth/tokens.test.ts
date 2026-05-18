@@ -12,9 +12,9 @@ async function fakeKeyStore(): Promise<ClientKeyStore> {
     ])) as CryptoKeyPair
     const jwk = (await crypto.subtle.exportKey('jwk', pair.publicKey)) as JsonWebKey
     return {
-        getOrCreate: async () => pair,
-        exportPublicJwk: async () => jwk,
-        thumbprint: async () => 'test-kid',
+        getOrCreate: () => Promise.resolve(pair),
+        exportPublicJwk: () => Promise.resolve(jwk),
+        thumbprint: () => Promise.resolve('test-kid'),
     }
 }
 
@@ -37,7 +37,7 @@ describe('token manager', () => {
     test('no active session → null, no token request', async () => {
         let calls = 0
         const tm = createTokenManager({
-            getClient: () => fakeClient(async () => ((calls += 1), tokenRes('x'))),
+            getClient: () => fakeClient(() => ((calls += 1), Promise.resolve(tokenRes('x')))),
             keyStore,
         })
         expect(await tm.getAccessToken()).toBeNull()
@@ -47,7 +47,7 @@ describe('token manager', () => {
     test('initialToken + expiry seeds the cache without a mint', async () => {
         let calls = 0
         const tm = createTokenManager({
-            getClient: () => fakeClient(async () => ((calls += 1), tokenRes('minted'))),
+            getClient: () => fakeClient(() => ((calls += 1), Promise.resolve(tokenRes('minted')))),
             keyStore,
         })
         tm.setActiveSession({ account: 'a', sessionId: 's' }, 'seed-token', FUTURE)
@@ -60,9 +60,9 @@ describe('token manager', () => {
         let calls = 0
         const tm = createTokenManager({
             getClient: () =>
-                fakeClient(async () => {
+                fakeClient(() => {
                     calls += 1
-                    return tokenRes(`tok-${calls}`)
+                    return Promise.resolve(tokenRes(`tok-${calls}`))
                 }),
             keyStore,
         })
@@ -76,9 +76,12 @@ describe('token manager', () => {
         let calls = 0
         const tm = createTokenManager({
             getClient: () =>
-                fakeClient(async () => {
+                fakeClient(() => {
                     calls += 1
-                    return { accessToken: `tok-${calls}`, accessExpiresAt: '2000-01-01T00:00:00Z' }
+                    return Promise.resolve({
+                        accessToken: `tok-${calls}`,
+                        accessExpiresAt: '2000-01-01T00:00:00Z',
+                    })
                 }),
             keyStore,
         })
@@ -116,10 +119,10 @@ describe('token manager', () => {
         const reauthed: string[] = []
         const tm = createTokenManager({
             getClient: () =>
-                fakeClient(async () => {
+                fakeClient(() => {
                     calls += 1
-                    if (fail) throw new Error('token endpoint 401')
-                    return tokenRes('recovered')
+                    if (fail) return Promise.reject(new Error('token endpoint 401'))
+                    return Promise.resolve(tokenRes('recovered'))
                 }),
             keyStore,
             onNeedsReauth: (acc) => reauthed.push(acc),

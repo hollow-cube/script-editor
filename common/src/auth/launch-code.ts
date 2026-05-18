@@ -27,10 +27,8 @@ const MARKER = '§k='
 function captureLaunchCode(): string | null {
     const loc = globalThis.location
     const rawHash = loc?.hash ?? ''
-    console.info('[launch] location.hash at construction =', JSON.stringify(rawHash))
 
     if (rawHash.length <= 1) {
-        console.info('[launch] no fragment present — no launch code')
         return null
     }
 
@@ -41,13 +39,11 @@ function captureLaunchCode(): string | null {
     } catch (err) {
         console.warn('[launch] decodeURIComponent failed, scanning raw fragment', err)
     }
-    console.info('[launch] decoded fragment =', JSON.stringify(decoded))
 
     // Strip the entire hash now — unconditionally, so a used/bad grant can
     // never be replayed by a reload, and so it does not linger in the URL.
     const stripped = (loc?.pathname ?? '') + (loc?.search ?? '')
     globalThis.history?.replaceState(null, '', stripped)
-    console.info('[launch] hash stripped, url is now', JSON.stringify(stripped))
 
     const idx = decoded.indexOf(MARKER)
     if (idx === -1) {
@@ -63,7 +59,6 @@ function captureLaunchCode(): string | null {
         return null
     }
 
-    console.info('[launch] extracted launch code =', JSON.stringify(code))
     return code
 }
 
@@ -75,7 +70,6 @@ export function createHashLaunchCodeSource(): LaunchCodeSource {
             // Single-use: hand the captured code over exactly once.
             const code = pending
             pending = null
-            if (code) console.info('[launch] take(): handing over launch code')
             return Promise.resolve(code)
         },
     }

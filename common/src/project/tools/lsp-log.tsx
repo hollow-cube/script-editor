@@ -255,12 +255,12 @@ function ConfigPane() {
     const { client, status } = useLuauLsp()
     const supportsSettings =
         !!client && typeof (client as { getSettings?: unknown }).getSettings === 'function'
-    // `status` is in the deps so the pane refreshes once the LSP starts and
-    // `settings` becomes populated, even though the callback doesn't read it.
-    const settings = useMemo(
-        () => (supportsSettings ? client.getSettings() : null),
-        [client, status, supportsSettings],
-    )
+    const settings = useMemo(() => {
+        // `status` participates so the memo recomputes once the LSP starts and
+        // getSettings() returns populated data, even though its value isn't read.
+        void status
+        return supportsSettings ? client.getSettings() : null
+    }, [client, status, supportsSettings])
     const text = useMemo(() => (settings ? formatJsonPretty(settings) : ''), [settings])
 
     if (!supportsSettings) {

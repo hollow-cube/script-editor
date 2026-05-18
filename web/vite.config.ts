@@ -3,10 +3,29 @@ import generouted from '@generouted/react-router/plugin'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import path from 'node:path'
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
+
+// The app is mounted under `/editor` — `/` deliberately does not resolve to it.
+// In the dev server `/` would otherwise 404 (Vite scopes everything to `base`),
+// so bounce it to the app root for convenience.
+const redirectRootToEditor = (): Plugin => ({
+    name: 'redirect-root-to-editor',
+    configureServer(server) {
+        server.middlewares.use((req, res, next) => {
+            if (req.url === '/') {
+                res.statusCode = 302
+                res.setHeader('Location', '/editor/')
+                res.end()
+                return
+            }
+            next()
+        })
+    },
+})
 
 export default defineConfig({
-    plugins: [react(), tailwindcss(), generouted(), cloudflare()],
+    base: '/editor/',
+    plugins: [react(), tailwindcss(), generouted(), cloudflare(), redirectRootToEditor()],
     // `jose` is reached only through the @hollowcube/common/auth source barrel,
     // so Vite's dep scanner discovers it late and re-optimizes mid-load —
     // re-bundling react-dom with a fresh hash while the page still holds the

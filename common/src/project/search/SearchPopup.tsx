@@ -523,7 +523,7 @@ function placeholderFor(tab: SearchTab): string {
     }
 }
 
-const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform)
+const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/u.test(navigator.platform)
 
 function formatKeybinding(binding: string): string {
     // @tanstack/react-hotkeys uses `$mod` as the platform-cmd. Translate for

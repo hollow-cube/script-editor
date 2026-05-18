@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client'
-import { Routes } from '@generouted/react-router'
+import { createBrowserRouter, RouterProvider } from 'react-router'
+import { routes } from '@generouted/react-router'
 
 import { AppRoot } from '@hollowcube/common'
 import { createHashLaunchCodeSource } from '@hollowcube/common/auth'
@@ -23,8 +24,14 @@ const platform = {
     launchCode: createHashLaunchCodeSource(),
 }
 
+// generouted's <Routes> builds its own browser router with no basename, so it
+// ignores Vite's `base`. Build the router ourselves from its exported route
+// tree so client navigation works under the `/editor` subpath.
+const basename = import.meta.env.BASE_URL.replace(/\/$/u, '') || '/'
+const router = createBrowserRouter(routes, { basename })
+
 createRoot(document.getElementById('root')!).render(
     <AppRoot platform={platform} devTools={import.meta.env.DEV}>
-        <Routes />
+        <RouterProvider router={router} />
     </AppRoot>,
 )

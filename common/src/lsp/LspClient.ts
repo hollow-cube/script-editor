@@ -752,7 +752,7 @@ function globToRegex(glob: string): RegExp {
         }
     }
     out += '$'
-    return new RegExp(out)
+    return new RegExp(out, 'u')
 }
 
 /** Helper: collect all { uri, edits } pairs from a WorkspaceEdit. */

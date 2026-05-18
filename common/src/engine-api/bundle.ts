@@ -5,7 +5,9 @@ import { engineApiDocSchema, type EngineApiDoc } from './schema'
 // web and the Wails asset host). The future remote/permanently-cached download
 // swaps only the fetch in `loadEngineApiBundle` — nothing downstream changes.
 
-const BUNDLE_URL = '/engine-api.editor.json'
+// Base-relative so it resolves under Vite's `base` (e.g. `/editor/`) instead
+// of always hitting the server root, which a subpath deploy never serves.
+const BUNDLE_URL = import.meta.env.BASE_URL + 'engine-api.editor.json'
 
 /** Synthetic require-able module: didOpen'd against the LSP so
  *  `require('@mapmaker/...')` resolves and type-checks. */

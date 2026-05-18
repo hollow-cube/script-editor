@@ -43,18 +43,11 @@ async function doRedeem(code: string, deps: RedeemDeps): Promise<RedeemOutcome> 
             htm: 'POST',
             htu,
         })
-        console.info('[redeem] POST', htu, { clientKind: deps.clientKind })
         const res = await v1AuthRedeem(
             deps.client,
             { launchCode: code, clientKind: deps.clientKind },
             proof,
         )
-        console.info('[redeem] backend response', {
-            account: res.account,
-            sessionId: res.sessionId,
-            accessExpiresAt: res.accessExpiresAt,
-            project: res.project ?? null,
-        })
         const session: StoredSession = {
             account: res.account.id,
             sessionId: res.sessionId,

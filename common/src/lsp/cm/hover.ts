@@ -134,7 +134,7 @@ function insetTooltipSpace(view: EditorView) {
 }
 
 function isWordChar(c: string | undefined): boolean {
-    return !!c && /[A-Za-z0-9_]/.test(c)
+    return !!c && /[A-Za-z0-9_]/u.test(c)
 }
 
 /** The bare `[A-Za-z0-9_]` identifier under `pos` (the member name, without
@@ -204,9 +204,9 @@ export function lspHover(
         const lineText = lineInfo.text
         let start = pos
         let end = pos
-        while (start > lineInfo.from && /[\w.:]/.test(lineText[start - lineInfo.from - 1] ?? ''))
+        while (start > lineInfo.from && /[\w.:]/u.test(lineText[start - lineInfo.from - 1] ?? ''))
             start--
-        while (end < lineInfo.to && /[\w.:]/.test(lineText[end - lineInfo.from] ?? '')) end++
+        while (end < lineInfo.to && /[\w.:]/u.test(lineText[end - lineInfo.from] ?? '')) end++
 
         const lspPos = offsetToPosition(view.state.doc, pos)
         const diagnostics = relevantDiagnostics(

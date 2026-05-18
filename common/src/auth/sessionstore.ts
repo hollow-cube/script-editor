@@ -18,16 +18,19 @@ export function createIndexedDbSessionStore(): SessionStore {
 export function createMemorySessionStore(): SessionStore {
     const map = new Map<string, StoredSession>()
     return {
-        list: async () => [...map.values()],
-        get: async (account) => map.get(account) ?? null,
-        save: async (session) => {
+        list: () => Promise.resolve([...map.values()]),
+        get: (account) => Promise.resolve(map.get(account) ?? null),
+        save: (session) => {
             map.set(session.account, session)
+            return Promise.resolve()
         },
-        remove: async (account) => {
+        remove: (account) => {
             map.delete(account)
+            return Promise.resolve()
         },
-        clear: async () => {
+        clear: () => {
             map.clear()
+            return Promise.resolve()
         },
     }
 }

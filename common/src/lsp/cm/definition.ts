@@ -38,7 +38,7 @@ const NON_SYMBOL_TOKENS = new Set([
 ])
 
 function isWordChar(c: string | undefined): boolean {
-    return !!c && /[A-Za-z0-9_]/.test(c)
+    return !!c && /[A-Za-z0-9_]/u.test(c)
 }
 
 function identifierAtRange(content: string, range: LspRange): string | null {
@@ -47,14 +47,14 @@ function identifierAtRange(content: string, range: LspRange): string | null {
 
     if (range.start.line === range.end.line) {
         const slice = line.slice(range.start.character, range.end.character)
-        if (/^[A-Za-z_]\w*$/.test(slice) && !NON_SYMBOL_TOKENS.has(slice)) return slice
+        if (/^[A-Za-z_]\w*$/u.test(slice) && !NON_SYMBOL_TOKENS.has(slice)) return slice
     }
     let s = range.start.character
     let e = range.start.character
     while (s > 0 && isWordChar(line[s - 1])) s--
     while (e < line.length && isWordChar(line[e])) e++
     const word = line.slice(s, e)
-    if (/^[A-Za-z_]\w*$/.test(word) && !NON_SYMBOL_TOKENS.has(word)) return word
+    if (/^[A-Za-z_]\w*$/u.test(word) && !NON_SYMBOL_TOKENS.has(word)) return word
     return null
 }
 

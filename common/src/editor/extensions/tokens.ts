@@ -38,7 +38,7 @@ function extractStringRange(view: EditorView, from: number, to: number) {
 }
 
 function isWordChar(c: string | undefined): boolean {
-    return !!c && /[\w$]/.test(c)
+    return !!c && /[\w$]/u.test(c)
 }
 
 function wordAt(view: EditorView, pos: number): { token: string; from: number; to: number } | null {

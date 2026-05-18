@@ -13,9 +13,9 @@ async function fakeKeyStore(): Promise<ClientKeyStore> {
     ])) as CryptoKeyPair
     const jwk = (await crypto.subtle.exportKey('jwk', pair.publicKey)) as JsonWebKey
     return {
-        getOrCreate: async () => pair,
-        exportPublicJwk: async () => jwk,
-        thumbprint: async () => 'test-kid',
+        getOrCreate: () => Promise.resolve(pair),
+        exportPublicJwk: () => Promise.resolve(jwk),
+        thumbprint: () => Promise.resolve('test-kid'),
     }
 }
 
@@ -36,7 +36,7 @@ describe('redeemLaunchCode', () => {
     test('ok → persists session and returns the access token + expiry', async () => {
         const sessionStore = createMemorySessionStore()
         const out = await redeemLaunchCode('ok-code', {
-            client: fakeClient(async () => OK_RESPONSE),
+            client: fakeClient(() => Promise.resolve(OK_RESPONSE)),
             keyStore: await fakeKeyStore(),
             sessionStore,
             clientKind: 'web',
@@ -58,7 +58,7 @@ describe('redeemLaunchCode', () => {
 
     test('ok → threads the granted project id through the outcome', async () => {
         const out = await redeemLaunchCode('ok-code', {
-            client: fakeClient(async () => ({ ...OK_RESPONSE, project: 'proj-42' })),
+            client: fakeClient(() => Promise.resolve({ ...OK_RESPONSE, project: 'proj-42' })),
             keyStore: await fakeKeyStore(),
             sessionStore: createMemorySessionStore(),
             clientKind: 'web',
@@ -93,9 +93,7 @@ describe('redeemLaunchCode', () => {
     test('redeem failure (generic 401 / network) → error outcome', async () => {
         const boom = new Error('unauthorized')
         const out = await redeemLaunchCode('err-code', {
-            client: fakeClient(async () => {
-                throw boom
-            }),
+            client: fakeClient(() => Promise.reject(boom)),
             keyStore: await fakeKeyStore(),
             sessionStore: createMemorySessionStore(),
             clientKind: 'desktop',

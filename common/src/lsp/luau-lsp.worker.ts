@@ -26,7 +26,9 @@ import {
 
 import standardDluauContent from './standard.d.luau?raw'
 
-const WASM_URL = '/Luau.LanguageServer.Wasm.wasm'
+// Base-relative so it resolves under Vite's `base` (e.g. `/editor/`) instead
+// of always hitting the server root, which a subpath deploy never serves.
+const WASM_URL = import.meta.env.BASE_URL + 'Luau.LanguageServer.Wasm.wasm'
 
 type WasmExports = {
     memory: WebAssembly.Memory
@@ -126,7 +128,7 @@ async function bootstrap(): Promise<void> {
         [],
         [
             new OpenFile(new File([])),
-            ConsoleStdout.lineBuffered((m) => console.log('[wasm stdout]', m)),
+            ConsoleStdout.lineBuffered((m) => console.warn('[wasm stdout]', m)),
             ConsoleStdout.lineBuffered((m) => console.warn('[wasm stderr]', m)),
             rootDir,
         ],
@@ -154,14 +156,7 @@ async function bootstrap(): Promise<void> {
             },
             host_log: (level: number, ptr: number, len: number) => {
                 const message = decoder.decode(memoryView(ptr, len))
-                const fn =
-                    level >= 3
-                        ? console.log
-                        : level === 2
-                          ? console.info
-                          : level === 1
-                            ? console.warn
-                            : console.error
+                const fn = level === 0 ? console.error : console.warn
                 fn(`[wasm L${level}]`, message)
             },
         },

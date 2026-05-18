@@ -130,14 +130,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const init = useCallback(async () => {
         try {
-            console.info('[auth] init: starting (ensuring client keypair)')
             setStatus({ kind: 'initializing' })
             // Ensure the client keypair exists before any proof is built.
             await graph.keyStore.getOrCreate()
 
             const code = (await graph.launchSource?.take()) ?? null
             if (code) {
-                console.info('[auth] init: launch code present, exchanging with backend')
                 setStatus({ kind: 'redeeming' })
                 const outcome = await redeemLaunchCode(code, {
                     client: graph.client,
@@ -146,12 +144,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     clientKind: platform.kind,
                 })
                 if (outcome.status === 'ok') {
-                    console.info('[auth] init: redeem OK', {
-                        account: outcome.session.account,
-                        sessionId: outcome.session.sessionId,
-                        accessExpiresAt: outcome.accessExpiresAt,
-                        map: outcome.project,
-                    })
                     graph.tokenManager.setActiveSession(
                         {
                             account: outcome.session.account,
@@ -163,13 +155,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     // Stash the granted map (per-tab) BEFORE flipping to
                     // `authenticated` so the gate observes it on the same
                     // render. `null` → gate shows "open from in-game".
-                    if (outcome.project) {
-                        console.info(
-                            `[auth] init: map ${JSON.stringify(outcome.project)} granted — loading it in the editor`,
-                        )
-                    } else {
-                        console.info('[auth] init: no map in grant — showing "open from in-game"')
-                    }
                     setActiveProjectId(outcome.project)
                     setSessions(await graph.sessionStore.list())
                     setActiveAccount(outcome.session.account)
@@ -187,16 +172,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     setStatus({ kind: 'error', error: outcome.error })
                     return
                 }
-                console.info('[auth] init: falling back to a stored session')
-            } else {
-                console.info('[auth] init: no launch code — resolving from stored sessions')
             }
             await resolveFromStore()
         } catch (error) {
             console.error('[auth] init: unexpected error', error)
             setStatus({ kind: 'error', error })
         }
-    }, [graph, resolveFromStore])
+    }, [graph, resolveFromStore, platform.kind])
 
     // Run once. The ref guard covers the React StrictMode dev double-invoke;
     // the launch-code source strip + redeem in-flight map are the deeper

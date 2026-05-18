@@ -39,7 +39,7 @@ export type ActionContextMenuProps = {
 }
 
 const SHORTCUT_FORMAT =
-    navigator?.platform && /Mac|iPod|iPhone|iPad/.test(navigator.platform) ? 'mac' : 'win'
+    navigator?.platform && /Mac|iPod|iPhone|iPad/u.test(navigator.platform) ? 'mac' : 'win'
 
 export function ActionContextMenu({
     open,

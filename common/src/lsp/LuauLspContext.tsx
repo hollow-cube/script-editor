@@ -50,7 +50,7 @@ export function LuauLspProvider({ children }: { children: ReactNode }) {
         // aliases are bare names.
         const luaurcAliases: Record<string, string> = {}
         for (const [key, target] of Object.entries(docModuleAliases)) {
-            const cleanKey = key.replace(/^@/, '').replace(/\/$/, '')
+            const cleanKey = key.replace(/^@/u, '').replace(/\/$/u, '')
             luaurcAliases[cleanKey] = target
         }
 

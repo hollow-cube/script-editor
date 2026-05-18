@@ -171,9 +171,9 @@ function makeSnippet(
     const right = Math.min(lineEnd, matchIndex + matchLength + SNIPPET_WINDOW)
     const rawSnippet = text.slice(left, right)
     // Normalize whitespace to keep one-line snippets.
-    const snippet = rawSnippet.replaceAll(/\s+/g, ' ').trim()
+    const snippet = rawSnippet.replaceAll(/\s+/gu, ' ').trim()
     const localMatch = matchIndex - left
-    const trimmedLead = rawSnippet.length - rawSnippet.replace(/^\s+/, '').length
+    const trimmedLead = rawSnippet.length - rawSnippet.replace(/^\s+/u, '').length
     return {
         snippet,
         matchStart: Math.max(0, localMatch - trimmedLead),
