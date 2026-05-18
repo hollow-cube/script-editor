@@ -28,6 +28,11 @@ jobs:
               with:
                   bun-version: latest
 
+            # wrangler 4.x requires Node >= 22; the runner's default is Node 20.
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+
             - name: Install
               run: bun install --frozen-lockfile
 
