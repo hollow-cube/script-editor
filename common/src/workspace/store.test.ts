@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
 
 import { createMemoryStorage, type Storage } from '../platform'
+import { STORAGE_VERSION } from './migrations'
 import { createWorkspaceStore, findLeaf, selectActiveContextTags } from './store'
 import { type EditorGroupNode, type Tab, type WorkspaceState } from './types'
 
@@ -317,6 +318,61 @@ describe('workspace store — persistence', () => {
 
         expect(store.getState().columnSizes).toEqual(initial.columnSizes)
         expect(storage.get(STORAGE_KEY)).toBeNull()
+    })
+})
+
+describe('workspace store — corrupt persisted state recovery', () => {
+    // localStorage corruption is routine (tab killed mid-write, quota trip,
+    // schema drift between two builds a tester switches between, a future
+    // STORAGE_VERSION bump). A blob that parses but is structurally wrong
+    // would crash the store on first render and a reload would re-read the
+    // same poison — an unrecoverable loop. The store must instead boot to the
+    // default layout and drop the poison so the next load starts clean.
+    const poison: Array<[string, string]> = [
+        ['not json', '{not json'],
+        ['structurally empty', JSON.stringify({ version: STORAGE_VERSION, state: {} })],
+        [
+            'future version after a downgrade',
+            JSON.stringify({ version: 99, state: makeInitial() }),
+        ],
+        [
+            'truncated valid blob',
+            JSON.stringify({ version: STORAGE_VERSION, state: makeInitial() }).slice(0, 80),
+        ],
+        [
+            'wrong-typed field',
+            JSON.stringify({
+                version: STORAGE_VERSION,
+                state: { ...makeInitial(), columnSizes: 'wide' },
+            }),
+        ],
+        [
+            'missing intermediate migration (version 0)',
+            JSON.stringify({ version: 0, state: makeInitial() }),
+        ],
+    ]
+
+    test.each(poison)('boots to default layout for %s and drops the blob', (_label, raw) => {
+        const storage = createMemoryStorage()
+        storage.set(STORAGE_KEY, raw)
+
+        const initial = makeInitial('leaf-default')
+        const store = makeStore({ initialState: initial, storage })
+
+        expect(store.getState().columnSizes).toEqual(initial.columnSizes)
+        expect(store.getState().center).toEqual(initial.center)
+        // Poison removed so the next construction doesn't re-read it.
+        expect(storage.get(STORAGE_KEY)).toBeNull()
+    })
+
+    test('valid persisted state is still restored (guard is not over-eager)', () => {
+        const storage = createMemoryStorage()
+        const first = makeStore({ storage })
+        first.getState().setColumnSizes([5, 90, 5])
+
+        const second = makeStore({ storage })
+        expect(second.getState().columnSizes).toEqual([5, 90, 5])
+        expect(storage.get(STORAGE_KEY)).not.toBeNull()
     })
 })
 

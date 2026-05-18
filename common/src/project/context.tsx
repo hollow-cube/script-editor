@@ -1,19 +1,29 @@
 import { createContext, useContext, type ReactNode } from 'react'
 
-import { type Project } from '@hollowcube/api'
+import { type MapFile } from '@hollowcube/api'
 
+// The app-shell view-model for the open map. It flattens the editor
+// bootstrap response (`{ map: { id, name, owner }, files }`) into one object
+// — the workspace UI calls the open thing a "project" (v0 naming, mirrors the
+// launch grant's `project` field); the wire contract is "map".
+//
 // Project state is modeled as a small discriminated union so the workspace
 // can render loading / error fallbacks coherently. Static use (demo, tests)
 // goes through <ProjectProvider project={...}> which is just a shortcut for
 // `{ status: 'loaded', project }`. API-driven use goes through `ProjectLoader`
 // in ./data/loader.
 
+export interface Project {
+    id: string
+    name: string
+    owner: string
+    files: MapFile[]
+}
+
 export type ProjectState =
     | { status: 'loading' }
     | { status: 'error'; error: unknown }
     | { status: 'loaded'; project: Project }
-
-export type { Project }
 
 const ProjectStateContext = createContext<ProjectState | null>(null)
 

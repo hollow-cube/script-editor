@@ -12,6 +12,7 @@ import {
 import { HCClient, type HCAuthHook } from '@hollowcube/api'
 
 import { usePlatform } from '../platform'
+import { setActiveProjectId } from './active-project'
 import { buildDpopProof } from './dpop'
 import { createWebCryptoKeyStore } from './keystore'
 import { createHashLaunchCodeSource } from './launch-code'
@@ -129,12 +130,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const init = useCallback(async () => {
         try {
+            console.info('[auth] init: starting (ensuring client keypair)')
             setStatus({ kind: 'initializing' })
             // Ensure the client keypair exists before any proof is built.
             await graph.keyStore.getOrCreate()
 
             const code = (await graph.launchSource?.take()) ?? null
             if (code) {
+                console.info('[auth] init: launch code present, exchanging with backend')
                 setStatus({ kind: 'redeeming' })
                 const outcome = await redeemLaunchCode(code, {
                     client: graph.client,
@@ -143,6 +146,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     clientKind: platform.kind,
                 })
                 if (outcome.status === 'ok') {
+                    console.info('[auth] init: redeem OK', {
+                        account: outcome.session.account,
+                        sessionId: outcome.session.sessionId,
+                        accessExpiresAt: outcome.accessExpiresAt,
+                        map: outcome.project,
+                    })
                     graph.tokenManager.setActiveSession(
                         {
                             account: outcome.session.account,
@@ -151,6 +160,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         outcome.accessToken,
                         outcome.accessExpiresAt,
                     )
+                    // Stash the granted map (per-tab) BEFORE flipping to
+                    // `authenticated` so the gate observes it on the same
+                    // render. `null` → gate shows "open from in-game".
+                    if (outcome.project) {
+                        console.info(
+                            `[auth] init: map ${JSON.stringify(outcome.project)} granted — loading it in the editor`,
+                        )
+                    } else {
+                        console.info(
+                            '[auth] init: no map in grant — showing "open from in-game"',
+                        )
+                    }
+                    setActiveProjectId(outcome.project)
                     setSessions(await graph.sessionStore.list())
                     setActiveAccount(outcome.session.account)
                     setStatus({ kind: 'authenticated', account: outcome.session.account })
@@ -159,13 +181,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 // Redeem failed (generic 401 — bad proof or used/expired
                 // code). If we already have stored sessions, fall back to the
                 // launcher; otherwise surface the error.
+                console.error('[auth] init: redeem failed', outcome.error)
                 if ((await graph.sessionStore.list()).length === 0) {
+                    console.error(
+                        '[auth] init: no stored sessions to fall back to — surfacing error',
+                    )
                     setStatus({ kind: 'error', error: outcome.error })
                     return
                 }
+                console.info('[auth] init: falling back to a stored session')
+            } else {
+                console.info('[auth] init: no launch code — resolving from stored sessions')
             }
             await resolveFromStore()
         } catch (error) {
+            console.error('[auth] init: unexpected error', error)
             setStatus({ kind: 'error', error })
         }
     }, [graph, resolveFromStore])

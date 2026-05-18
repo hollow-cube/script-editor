@@ -1,9 +1,9 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useMemo, type ReactNode } from 'react'
 
-import { useV1ProjectGet } from '@hollowcube/api'
+import { useV1MapEditorBootstrap } from '@hollowcube/api'
 
 import { usePlatform } from '../../platform'
-import { ProjectStateProvider, useProjectState } from '../context'
+import { ProjectStateProvider, useProjectState, type Project } from '../context'
 
 // API-driven project loader. Fetches the project via the HCClient injected
 // through `<HCClientProvider>` upstream, threads the result through
@@ -29,15 +29,29 @@ type ProjectLoaderProps = {
 }
 
 export function ProjectLoader({ projectId, loading, errored, children }: ProjectLoaderProps) {
-    const { data, error, status } = useV1ProjectGet(projectId)
+    const { data, error, status } = useV1MapEditorBootstrap(projectId)
 
-    // Always update the window title to match the project name.
+    // Flatten the editor-bootstrap response into the app-shell view-model.
+    const project = useMemo<Project | undefined>(
+        () =>
+            data
+                ? {
+                      id: data.map.id,
+                      name: data.map.name,
+                      owner: data.map.owner,
+                      files: data.files,
+                  }
+                : undefined,
+        [data],
+    )
+
+    // Always update the window title to match the map name.
     const { window } = usePlatform()
     useEffect(() => {
-        if (data?.name) {
-            window?.setTitle(data.name)
+        if (project?.name) {
+            window?.setTitle(project.name)
         }
-    }, [data?.name, window])
+    }, [project?.name, window])
 
     if (status === 'pending') {
         return (
@@ -54,7 +68,7 @@ export function ProjectLoader({ projectId, loading, errored, children }: Project
         )
     }
     return (
-        <ProjectStateProvider state={{ status: 'loaded', project: data }}>
+        <ProjectStateProvider state={{ status: 'loaded', project: project! }}>
             {children}
         </ProjectStateProvider>
     )

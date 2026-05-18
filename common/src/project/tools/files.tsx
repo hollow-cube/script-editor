@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FilePlusIcon, FilesIcon, PencilIcon, Trash2Icon } from 'lucide-react'
 
-import { useHCClient, useV1ProjectFilesDelete, type ProjectFile } from '@hollowcube/api'
+import { useHCClient, useV1MapFilesDelete, type MapFile } from '@hollowcube/api'
 import { FileTree, type FileTreeNode, Input, ScrollArea } from '@hollowcube/design-system'
 
 import { listAllLanguageMimes, useLanguages } from '../../editor/languages'
@@ -41,7 +41,7 @@ function FilesPane() {
     const pending = usePendingFiles()
     const pendingStore = usePendingFilesStore()
     const { openEditor } = useProjectActions()
-    const deleteMutation = useV1ProjectFilesDelete()
+    const deleteMutation = useV1MapFilesDelete()
     const { useStore } = useWorkspaceContext()
     const languages = useLanguages()
     const languageMimes = useMemo(() => listAllLanguageMimes(languages), [languages])
@@ -51,7 +51,7 @@ function FilesPane() {
     const documentStore = useDocumentStore()
 
     const filesByPath = useMemo(() => {
-        const map = new Map<string, ProjectFile>()
+        const map = new Map<string, MapFile>()
         for (const f of project.files) map.set(f.path, f)
         return map
     }, [project.files])
@@ -112,7 +112,7 @@ function FilesPane() {
                 body = docState.current
             } else {
                 try {
-                    const bytes = await hcClient.v1.project.files.get(project.id, oldPath)
+                    const bytes = await hcClient.v1.map.files.get(project.id, oldPath)
                     body = new TextDecoder('utf-8', { fatal: false }).decode(bytes.bytes)
                     contentType = bytes.contentType || 'text/plain'
                 } catch (e) {
@@ -121,13 +121,13 @@ function FilesPane() {
                 }
             }
             try {
-                await hcClient.v1.project.files.update(project.id, newPath, body, contentType)
+                await hcClient.v1.map.files.update(project.id, newPath, body, contentType)
             } catch (e) {
                 setOpenError(`${newPath}: write failed (${formatErr(e)})`)
                 return
             }
             try {
-                await hcClient.v1.project.files.delete(project.id, oldPath)
+                await hcClient.v1.map.files.delete(project.id, oldPath)
             } catch (e) {
                 // The new path is already written; the old will be tidied by
                 // the next refresh. Surface the error but don't roll back.
@@ -298,7 +298,7 @@ function FilesPane() {
             // committed to deleting the file — letting save run after delete
             // would race or resurrect it.
             closeTabsForPath(useStore, path)
-            deleteMutation.mutate({ projectId: project.id, path })
+            deleteMutation.mutate({ mapId: project.id, path })
         },
         [deleteMutation, project.id, useStore],
     )

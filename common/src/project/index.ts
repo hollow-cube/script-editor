@@ -48,7 +48,7 @@ export {
     type DocumentId,
     type DocumentStore,
 } from './documents'
-export { AppErrorBoundary, PaneErrorBoundary } from './error-boundary'
+export { AppErrorBoundary, ProjectErrorBoundary, PaneErrorBoundary } from './error-boundary'
 export { ProjectLoader, ProjectGate, HCClientProvider, useHCClient } from './data'
 export { ProjectServices, type LuauLspSnapshot } from './services'
 export {

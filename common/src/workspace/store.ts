@@ -4,6 +4,7 @@ import { type Storage } from '@hollowcube/common/platform'
 
 import { DEFAULT_SPLIT_BIAS } from './constants'
 import { runMigrations, STORAGE_VERSION } from './migrations'
+import { isWorkspaceState } from './validate'
 import {
     type ActiveDragState,
     type DockId,
@@ -84,10 +85,21 @@ function readPersisted(storage: Storage, key: string): WorkspaceState | null {
     if (!raw) return null
     try {
         const parsed = JSON.parse(raw) as Persisted
-        return runMigrations(parsed)
+        const migrated = runMigrations(parsed)
+        if (migrated !== null && isWorkspaceState(migrated)) return migrated
     } catch {
-        return null
+        // A parse throw is treated the same as structurally invalid state —
+        // fall through to the reset path below.
     }
+    // We get here when the blob failed to parse, `runMigrations` bailed
+    // (missing intermediate migration or a version newer than this build),
+    // or it parsed but is structurally wrong/partial. Returning it would
+    // spread invalid state into the store and crash on first render; a reload
+    // re-reads the same poison → an unrecoverable crash loop. Drop it so the
+    // store falls back to `opts.initialState`. Losing layout is recoverable;
+    // returning structurally-invalid state is not.
+    storage.remove(key)
+    return null
 }
 
 function writePersisted(storage: Storage, key: string, state: WorkspaceState) {

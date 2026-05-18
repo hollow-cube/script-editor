@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import type { SymbolKind } from 'vscode-languageserver-types'
 
-import type { ProjectFile } from '@hollowcube/api'
+import type { MapFile } from '@hollowcube/api'
 
 import type { Action } from '../actions/types'
 
@@ -37,7 +37,7 @@ export type SearchResult =
           subtitle?: string
           matches: number[]
           score: number
-          data: ProjectFile
+          data: MapFile
       }
     | {
           kind: 'text'

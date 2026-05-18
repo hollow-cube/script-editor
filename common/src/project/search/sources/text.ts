@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
-import { useHCClient, v1ProjectFilesGet, type HCClient, type ProjectFile } from '@hollowcube/api'
-import { v1ProjectFilesGetKey } from '@hollowcube/api'
+import { useHCClient, v1MapFilesGet, type HCClient, type MapFile } from '@hollowcube/api'
+import { v1MapFilesGetKey } from '@hollowcube/api'
 
 import { listAllLanguageMimes, useLanguages } from '../../../editor/languages'
 import { useProject } from '../../context'
@@ -25,7 +25,7 @@ type TextResult = Extract<SearchResult, { kind: 'text' }>
 //     short-circuits both the network and the per-file scan loop.
 //
 // Caching: file content lives in TanStack Query under the same key as
-// `useV1ProjectFilesGet`. Two consequences:
+// `useV1MapFilesGet`. Two consequences:
 //   1. Repeated text searches for the same query don't re-download files.
 //   2. Editor tabs that already loaded a file share its cached bytes with the
 //      grepper (no double-fetch).
@@ -78,7 +78,7 @@ export function useTextSearchResults(query: string): TextSearchState {
         let scanned = 0
         let totalMatches = 0
 
-        const scanFile = async (file: ProjectFile) => {
+        const scanFile = async (file: MapFile) => {
             if (controller.signal.aborted) return
             if (totalMatches >= TOTAL_LIMIT) return
             let text: string
@@ -121,12 +121,12 @@ async function loadFileText(
     projectId: string,
     path: string,
 ): Promise<string> {
-    // Reuse the cached bytes if v1ProjectFilesGet has fetched this file
-    // already (e.g. because the user has it open in an editor tab); otherwise
-    // run the fetch through the query client so the cache picks it up.
+    // Reuse the cached bytes if v1MapFilesGet has fetched this file already
+    // (e.g. because the user has it open in an editor tab); otherwise run the
+    // fetch through the query client so the cache picks it up.
     const data = await queryClient.fetchQuery({
-        queryKey: v1ProjectFilesGetKey(projectId, path),
-        queryFn: () => v1ProjectFilesGet(client, projectId, path),
+        queryKey: v1MapFilesGetKey(projectId, path),
+        queryFn: () => v1MapFilesGet(client, projectId, path),
     })
     return new TextDecoder('utf-8', { fatal: false }).decode(data.bytes)
 }

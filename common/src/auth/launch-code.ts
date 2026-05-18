@@ -1,31 +1,81 @@
 import type { LaunchCodeSource } from '../platform'
 
-// FLAG(backend): provisional web launch-code transport. The code arrives as a
-// URL fragment `#code=<launch_code>`. We read AND strip it synchronously on
-// the first take() (no await before the strip) so a reload or React
-// StrictMode remount cannot replay a single-use code. Web uses browser-history
-// routing, so the fragment does not collide with the router. Desktop uses hash
-// routing and gets NO hash source in Phase 1 (handoff is Phase 2 — a Wails
-// deep-link event will provide the code instead).
+// FLAG(backend): web launch-code transport. The game directs the browser to a
+// URL whose fragment carries the launch grant after a fixed `§k=` marker, e.g.
+//
+//     http://localhost:5173/#§k=I7jcvoA_N7Ak
+//
+// The `§k=` marker is always present and is purely a delimiter — it is
+// ignored; the grant is everything after the `=`. `§` (U+00A7) is often
+// percent-encoded by the browser in `location.hash` (`%C2%A7`), so we
+// best-effort `decodeURIComponent` before scanning.
+//
+// IMPORTANT — capture timing: the fragment is read AND stripped *synchronously
+// when this source is constructed*, NOT lazily on the first `take()`. The web
+// entrypoint (`web/src/main.tsx`) constructs it at module top-level, before
+// `createRoot().render()`, so this runs before React Router mounts. React
+// Router's browser history takes over the URL during mount and the fragment is
+// gone by the time `AuthProvider.init()` (which awaits the keystore before
+// calling `take()`) gets to it — reading it at construction is the only point
+// guaranteed to still see it. Stripping it immediately also makes the grant
+// single-use: a reload or StrictMode remount cannot replay it.
+//
+// Desktop uses hash routing and gets NO hash source in Phase 1 (handoff is
+// Phase 2 — a Wails deep-link event will provide the code instead).
+const MARKER = '§k='
+
+function captureLaunchCode(): string | null {
+    const loc = globalThis.location
+    const rawHash = loc?.hash ?? ''
+    console.info('[launch] location.hash at construction =', JSON.stringify(rawHash))
+
+    if (rawHash.length <= 1) {
+        console.info('[launch] no fragment present — no launch code')
+        return null
+    }
+
+    const body = rawHash.slice(1)
+    let decoded = body
+    try {
+        decoded = decodeURIComponent(body)
+    } catch (err) {
+        console.warn('[launch] decodeURIComponent failed, scanning raw fragment', err)
+    }
+    console.info('[launch] decoded fragment =', JSON.stringify(decoded))
+
+    // Strip the entire hash now — unconditionally, so a used/bad grant can
+    // never be replayed by a reload, and so it does not linger in the URL.
+    const stripped = (loc?.pathname ?? '') + (loc?.search ?? '')
+    globalThis.history?.replaceState(null, '', stripped)
+    console.info('[launch] hash stripped, url is now', JSON.stringify(stripped))
+
+    const idx = decoded.indexOf(MARKER)
+    if (idx === -1) {
+        console.warn(
+            `[launch] marker ${JSON.stringify(MARKER)} not found in fragment — no launch code`,
+        )
+        return null
+    }
+
+    const code = decoded.slice(idx + MARKER.length).trim()
+    if (!code) {
+        console.warn('[launch] marker found but launch code is empty')
+        return null
+    }
+
+    console.info('[launch] extracted launch code =', JSON.stringify(code))
+    return code
+}
+
 export function createHashLaunchCodeSource(): LaunchCodeSource {
+    // Capture synchronously, here, at construction — see the note above.
+    let pending = captureLaunchCode()
     return {
-        // Not async: the read + strip run synchronously (no await before
-        // replaceState) so a StrictMode remount or reload can't replay the
-        // single-use code; the result is wrapped to satisfy the interface.
         take: () => {
-            const loc = globalThis.location
-            const hash = loc?.hash ?? ''
-            if (hash.length <= 1) return Promise.resolve(null)
-            const params = new URLSearchParams(hash.slice(1))
-            const code = params.get('code')
-            if (!code) return Promise.resolve(null)
-            params.delete('code')
-            const rest = params.toString()
-            globalThis.history.replaceState(
-                null,
-                '',
-                loc.pathname + loc.search + (rest ? `#${rest}` : ''),
-            )
+            // Single-use: hand the captured code over exactly once.
+            const code = pending
+            pending = null
+            if (code) console.info('[launch] take(): handing over launch code')
             return Promise.resolve(code)
         },
     }

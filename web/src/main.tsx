@@ -5,19 +5,21 @@ import { AppRoot } from '@hollowcube/common'
 import { createHashLaunchCodeSource } from '@hollowcube/common/auth'
 import { createBrowserStorage } from '@hollowcube/common/platform'
 
+import { env } from './env'
+
 import '@hollowcube/design-system/globals.css'
 
 // Browser-history routing here, so the launch-code fragment (#code=…) doesn't
 // collide with the router. Desktop omits this (hash routing + Phase 2 handoff).
 //
-// Dev hits Envoy directly at :10000 so the request origin == the DPoP `htu`
-// the backend reconstructs (the Vite same-origin proxy would make htu :5173
-// and every proof would 401). Prod is served from the real Envoy origin, so
-// same-origin (no base) is correct there.
+// `apiBaseUrl` is always an absolute, validated URL (web/src/env.ts). It is
+// cross-origin in prod (editor on hollowcube.net, API on api.hollowcube.net)
+// and points at Envoy directly in dev so the request origin == the DPoP `htu`
+// the backend reconstructs — there is no same-origin fallback.
 const platform = {
     kind: 'web' as const,
     storage: createBrowserStorage(),
-    apiBaseUrl: import.meta.env.DEV ? 'http://localhost:10000' : undefined,
+    apiBaseUrl: env.VITE_API_BASE_URL,
     launchCode: createHashLaunchCodeSource(),
 }
 

@@ -5,7 +5,16 @@ import { buildClientKeyProof } from './dpop'
 import type { SessionStore, StoredSession } from './types'
 
 export type RedeemOutcome =
-    | { status: 'ok'; session: StoredSession; accessToken: string; accessExpiresAt: string }
+    | {
+          status: 'ok'
+          session: StoredSession
+          accessToken: string
+          accessExpiresAt: string
+          /** Project the launch grant opened from in-game. `null` when the
+           *  grant carried no project — the caller renders the
+           *  "open from in-game" screen rather than a stale project. */
+          project: string | null
+      }
     | { status: 'error'; error: unknown }
 
 export interface RedeemDeps {
@@ -27,17 +36,25 @@ async function doRedeem(code: string, deps: RedeemDeps): Promise<RedeemOutcome> 
         // Client-key proof (no `ath`). htu must equal the public origin Envoy
         // reconstructs — derived from the client's base URL via the shared
         // canonicalizer.
+        const htu = canonicalHtu(`${deps.client.baseUrl}/v1/auth/redeem`)
         const proof = await buildClientKeyProof({
             privateKey,
             publicJwk,
             htm: 'POST',
-            htu: canonicalHtu(`${deps.client.baseUrl}/v1/auth/redeem`),
+            htu,
         })
+        console.info('[redeem] POST', htu, { clientKind: deps.clientKind })
         const res = await v1AuthRedeem(
             deps.client,
             { launchCode: code, clientKind: deps.clientKind },
             proof,
         )
+        console.info('[redeem] backend response', {
+            account: res.account,
+            sessionId: res.sessionId,
+            accessExpiresAt: res.accessExpiresAt,
+            project: res.project ?? null,
+        })
         const session: StoredSession = {
             account: res.account.id,
             sessionId: res.sessionId,
@@ -49,11 +66,13 @@ async function doRedeem(code: string, deps: RedeemDeps): Promise<RedeemOutcome> 
             session,
             accessToken: res.accessToken,
             accessExpiresAt: res.accessExpiresAt,
+            project: res.project ?? null,
         }
     } catch (err) {
         // Redeem failure is a generic 401 (bad proof OR expired/used code) —
         // indistinguishable by contract. The caller falls back to any stored
         // session.
+        console.error('[redeem] exchange failed', err)
         return { status: 'error', error: err }
     }
 }

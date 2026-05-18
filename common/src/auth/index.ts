@@ -6,6 +6,7 @@ export { createWebCryptoKeyStore } from './keystore'
 export { createIndexedDbSessionStore, createMemorySessionStore } from './sessionstore'
 export { createTokenManager, type TokenManager, type TokenManagerDeps } from './tokens'
 export { redeemLaunchCode, type RedeemDeps, type RedeemOutcome } from './redeem'
+export { getActiveProjectId, setActiveProjectId } from './active-project'
 export {
     buildClientKeyProof,
     buildDpopProof,

@@ -1,5 +1,6 @@
 // Auth domain types. Wire-format Zod schemas live in the api endpoint files
-// (same convention as ProjectSchema in v1-project-get.ts) so the api package
+// (same convention as MapEditorBootstrapSchema in v1-map-editor-bootstrap.ts)
+// so the api package
 // owns the contract and `common` depends on `api`, never the reverse.
 
 import type { AccountMeta } from '@hollowcube/api'

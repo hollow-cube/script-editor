@@ -1,10 +1,10 @@
-import { type ProjectFile } from '@hollowcube/api'
+import { type MapFile } from '@hollowcube/api'
 import { type FileTreeNode } from '@hollowcube/design-system'
 
 import { type PendingFile } from '../data/pending-files'
 import { renderFileIcon } from '../file-icons'
 
-// Build a hierarchical FileTreeNode list from a flat ProjectFile array, with
+// Build a hierarchical FileTreeNode list from a flat MapFile array, with
 // optional pending entries merged in. Pending entries with a path appear like
 // real files; pending entries without a path (purely untitled) are ignored
 // here — they live only as tabs, not as tree rows.
@@ -45,7 +45,7 @@ export type BuildFileTreeExtras = {
 }
 
 export function buildFileTree(
-    files: readonly ProjectFile[],
+    files: readonly MapFile[],
     pending: readonly PendingFile[] = [],
     extras: BuildFileTreeExtras = {},
 ): FileTreeNode[] {

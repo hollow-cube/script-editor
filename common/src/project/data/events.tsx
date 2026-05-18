@@ -13,10 +13,10 @@ import { useQueryClient } from '@tanstack/react-query'
 import {
     ApiError,
     useHCClient,
-    v1ProjectEvents,
-    v1ProjectFilesGetKey,
-    v1ProjectGetKey,
-    type ProjectEventEnvelope,
+    v1MapEditorBootstrapKey,
+    v1MapEditorEvents,
+    v1MapFilesGetKey,
+    type MapEventEnvelope,
 } from '@hollowcube/api'
 
 import { useDocumentStore } from '../documents'
@@ -123,7 +123,7 @@ export function ProjectEventsProvider({ projectId, children }: ProjectEventsProv
             while (!cancelled) {
                 dispatch({ type: attempt === 0 ? 'connecting' : 'reconnecting' })
                 try {
-                    const stream = v1ProjectEvents(client, projectId, {
+                    const stream = v1MapEditorEvents(client, projectId, {
                         lastEventId: lastEventIdRef.current,
                         signal: ac.signal,
                     })
@@ -206,16 +206,16 @@ type QueryClientLike = ReturnType<typeof useQueryClient>
 type DocStoreLike = ReturnType<typeof useDocumentStore>
 
 function applyEvent(
-    evt: ProjectEventEnvelope,
+    evt: MapEventEnvelope,
     queryClient: QueryClientLike,
     documentStore: DocStoreLike,
     projectId: string,
 ) {
-    queryClient.invalidateQueries({ queryKey: v1ProjectGetKey(projectId) })
+    queryClient.invalidateQueries({ queryKey: v1MapEditorBootstrapKey(projectId) })
     const docs = documentStore.getState().documents
     const matching = docs[evt.path]
     if (matching && !matching.dirty) {
-        queryClient.invalidateQueries({ queryKey: v1ProjectFilesGetKey(projectId, evt.path) })
+        queryClient.invalidateQueries({ queryKey: v1MapFilesGetKey(projectId, evt.path) })
     }
 }
 

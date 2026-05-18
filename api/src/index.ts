@@ -1,8 +1,8 @@
 export {
     HCClient,
     HCV1Client,
-    HCV1ProjectClient,
-    HCV1ProjectFilesClient,
+    HCV1MapClient,
+    HCV1MapFilesClient,
     canonicalHtu,
     type HCAuthHook,
     type HCClientLike,
@@ -16,59 +16,71 @@ export { HCClientProvider, useHCClient } from './provider'
 export { ApiError, ApiErrorSchema, type ApiErrorBody } from './error'
 
 export {
-    encodeProjectId,
+    reportDiagnostic,
+    setDiagnosticSink,
+    type Diagnostic,
+    type DiagnosticSink,
+} from './diagnostics'
+
+export {
+    encodeMapId,
     encodeWildcardPath,
-    projectEventsPath,
-    projectFilePath,
-    projectPath,
+    mapEditorBootstrapPath,
+    mapEditorEventsPath,
+    mapFilePath,
 } from './path'
 
 export { parseSSEStream, type SSEEvent } from './sse'
 
 export {
-    ProjectFileSchema,
-    ProjectSchema,
-    useV1ProjectGet,
-    v1ProjectGet,
-    v1ProjectGetKey,
-    v1ProjectGetOptions,
-    type Project,
-    type ProjectFile,
-    type UseV1ProjectGetOptions,
-} from './endpoints/v1-project-get'
+    MapEditorBootstrapSchema,
+    MapFileSchema,
+    MapInfoSchema,
+    useV1MapEditorBootstrap,
+    v1MapEditorBootstrap,
+    v1MapEditorBootstrapKey,
+    v1MapEditorBootstrapOptions,
+    type MapEditorBootstrap,
+    type MapFile,
+    type MapInfo,
+    type UseV1MapEditorBootstrapOptions,
+} from './endpoints/v1-map-editor-bootstrap'
 
 export {
-    useV1ProjectFilesGet,
-    v1ProjectFilesGet,
-    v1ProjectFilesGetKey,
-    v1ProjectFilesGetOptions,
-    type ProjectFileBytes,
-    type UseV1ProjectFilesGetOptions,
-} from './endpoints/v1-project-files-get'
+    useV1MapFilesGet,
+    v1MapFilesGet,
+    v1MapFilesGetKey,
+    v1MapFilesGetOptions,
+    type MapFileBytes,
+    type MapFilesGetConditions,
+    type UseV1MapFilesGetOptions,
+} from './endpoints/v1-map-files-get'
 
 export {
-    useV1ProjectFilesUpdate,
-    v1ProjectFilesUpdate,
-    v1ProjectFilesUpdateKey,
-    type UseV1ProjectFilesUpdateOptions,
-    type V1ProjectFilesUpdateVariables,
-} from './endpoints/v1-project-files-update'
+    useV1MapFilesUpdate,
+    v1MapFilesUpdate,
+    v1MapFilesUpdateKey,
+    type UseV1MapFilesUpdateOptions,
+    type V1MapFilesUpdateVariables,
+} from './endpoints/v1-map-files-update'
 
 export {
-    useV1ProjectFilesDelete,
-    v1ProjectFilesDelete,
-    v1ProjectFilesDeleteKey,
-    type UseV1ProjectFilesDeleteOptions,
-    type V1ProjectFilesDeleteVariables,
-} from './endpoints/v1-project-files-delete'
+    useV1MapFilesDelete,
+    v1MapFilesDelete,
+    v1MapFilesDeleteKey,
+    type UseV1MapFilesDeleteOptions,
+    type V1MapFilesDeleteVariables,
+} from './endpoints/v1-map-files-delete'
+
+export { type MapFilesWriteConditions } from './endpoints/v1-map-files-write'
 
 export {
-    ProjectEventSchema,
-    v1ProjectEvents,
-    type ProjectEvent,
-    type ProjectEventEnvelope,
-    type V1ProjectEventsOptions,
-} from './endpoints/v1-project-events'
+    MapEventSchema,
+    v1MapEditorEvents,
+    type MapEvent,
+    type MapEventEnvelope,
+    type V1MapEditorEventsOptions,
+} from './endpoints/v1-map-editor-events'
 
 export {
     AccountMetaSchema,

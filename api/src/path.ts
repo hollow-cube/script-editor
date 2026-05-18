@@ -1,5 +1,5 @@
-export function encodeProjectId(projectId: string): string {
-    return encodeURIComponent(projectId)
+export function encodeMapId(mapId: string): string {
+    return encodeURIComponent(mapId)
 }
 
 export function encodeWildcardPath(path: string): string {
@@ -10,14 +10,14 @@ export function encodeWildcardPath(path: string): string {
         .join('/')
 }
 
-export function projectPath(projectId: string): `/${string}` {
-    return `/v1/projects/${encodeProjectId(projectId)}`
+export function mapEditorBootstrapPath(mapId: string): `/${string}` {
+    return `/v1/maps/${encodeMapId(mapId)}/editor/bootstrap`
 }
 
-export function projectFilePath(projectId: string, path: string): `/${string}` {
-    return `/v1/projects/${encodeProjectId(projectId)}/files/${encodeWildcardPath(path)}`
+export function mapFilePath(mapId: string, path: string): `/${string}` {
+    return `/v1/maps/${encodeMapId(mapId)}/files/${encodeWildcardPath(path)}`
 }
 
-export function projectEventsPath(projectId: string): `/${string}` {
-    return `/v1/projects/${encodeProjectId(projectId)}/events`
+export function mapEditorEventsPath(mapId: string): `/${string}` {
+    return `/v1/maps/${encodeMapId(mapId)}/editor/events`
 }

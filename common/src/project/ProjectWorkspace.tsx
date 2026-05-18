@@ -3,7 +3,7 @@ import { useCallback, useMemo } from 'react'
 import { HCClientProvider, useHCClient } from '@hollowcube/api'
 import { TooltipProvider } from '@hollowcube/design-system'
 
-import { AuthGate, useAuth } from '../auth'
+import { AuthGate, getActiveProjectId, useAuth } from '../auth'
 import { LanguageProvider } from '../editor/languages'
 import { EngineApiProvider } from '../engine-api'
 import { LuauLspProvider } from '../lsp'
@@ -34,6 +34,7 @@ import { CloseFocusedTabAction, useTabContextMenu } from './data/tab-actions'
 import { DockAddToolButton } from './DockAddToolButton'
 import { DockEmptyState } from './DockEmptyState'
 import { DocumentStoreProvider, useDocumentStore } from './documents'
+import { ProjectErrorBoundary } from './error-boundary'
 import { apiTestEditor } from './editors/api-test'
 import { docsEditor } from './editors/docs'
 import { TEXT_EDITOR_KIND, textEditor } from './editors/text'
@@ -51,10 +52,11 @@ import { lspLogTool } from './tools/lsp-log'
 import { problemsTool } from './tools/problems'
 import { structureTool } from './tools/structure'
 
-// The project id stays hardcoded until `/:projectId` routing lands. The
-// storage key encodes it, so per-project layout state is naturally isolated.
-const PROJECT_ID = 'f973cc98-e806-464d-9435-fc4b1d49fde7'
-const STORAGE_KEY = `hc-project:${PROJECT_ID}:workspace-v2`
+// The project id comes from the in-game launch grant (stashed per-tab in
+// sessionStorage by the auth layer) — there is no hardcoded project and no
+// `/:projectId` routing in v0. The workspace storage key encodes it so
+// per-project layout state is naturally isolated.
+const workspaceStorageKey = (projectId: string) => `hc-project:${projectId}`
 
 const TOOLS: readonly ToolDefinition[] = [filesTool, structureTool, problemsTool, lspLogTool]
 const EDITORS: readonly AnyEditorDefinition[] = [
@@ -71,53 +73,68 @@ export function ProjectWorkspace() {
     // desktop to bypass the `wails://` scheme handler (WebKit bug 192315).
     // <AuthGate> blocks this subtree until an authenticated session exists.
     const { client } = useAuth()
+    // <AuthGate> only renders children once authenticated AND a project id is
+    // present, so inside the gate `projectId` is always a string. The ternary
+    // narrows the type and keeps the projectId-dependent tree from being
+    // constructed when there's nothing to open.
+    const projectId = getActiveProjectId()
 
     return (
         <AuthGate>
-            <HCClientProvider client={client}>
-                <ProjectLoader
-                    projectId={PROJECT_ID}
-                    loading={<StatusScreen tone='muted'>Loading project…</StatusScreen>}
-                    errored={(err) => (
-                        <StatusScreen tone='error'>
-                            Failed to load project: {formatErr(err)}
-                        </StatusScreen>
-                    )}
-                >
-                    <RegistryProvider tools={TOOLS} editors={EDITORS}>
-                        <EngineApiProvider>
-                            <LanguageProvider>
-                                <DocumentStoreProvider>
-                                    <PendingFilesProvider>
-                                        <ProjectEventsProvider projectId={PROJECT_ID}>
-                                            <ProjectServicesProvider>
-                                                <ServicesActionRegistryAdapter>
-                                                    <TooltipProvider>
-                                                        <ProjectGate>
-                                                            <LuauLspProvider>
-                                                                <LspUiProvider>
-                                                                    <LspBufferBridge />
-                                                                    <LspWatchedFilesBridge />
-                                                                    <ProjectWorkspaceInner />
-                                                                </LspUiProvider>
-                                                            </LuauLspProvider>
-                                                        </ProjectGate>
-                                                    </TooltipProvider>
-                                                </ServicesActionRegistryAdapter>
-                                            </ProjectServicesProvider>
-                                        </ProjectEventsProvider>
-                                    </PendingFilesProvider>
-                                </DocumentStoreProvider>
-                            </LanguageProvider>
-                        </EngineApiProvider>
-                    </RegistryProvider>
-                </ProjectLoader>
-            </HCClientProvider>
+            {projectId ? (
+                <ProjectErrorBoundary>
+                    <HCClientProvider client={client}>
+                        <ProjectLoader
+                            projectId={projectId}
+                            loading={
+                                <StatusScreen tone='muted'>Loading project…</StatusScreen>
+                            }
+                            errored={(err) => (
+                                <StatusScreen tone='error'>
+                                    Failed to load project: {formatErr(err)}
+                                </StatusScreen>
+                            )}
+                        >
+                            <RegistryProvider tools={TOOLS} editors={EDITORS}>
+                                <EngineApiProvider>
+                                    <LanguageProvider>
+                                        <DocumentStoreProvider>
+                                            <PendingFilesProvider>
+                                                <ProjectEventsProvider projectId={projectId}>
+                                                    <ProjectServicesProvider>
+                                                        <ServicesActionRegistryAdapter>
+                                                            <TooltipProvider>
+                                                                <ProjectGate>
+                                                                    <LuauLspProvider>
+                                                                        <LspUiProvider>
+                                                                            <LspBufferBridge />
+                                                                            <LspWatchedFilesBridge />
+                                                                            <ProjectWorkspaceInner
+                                                                                projectId={
+                                                                                    projectId
+                                                                                }
+                                                                            />
+                                                                        </LspUiProvider>
+                                                                    </LuauLspProvider>
+                                                                </ProjectGate>
+                                                            </TooltipProvider>
+                                                        </ServicesActionRegistryAdapter>
+                                                    </ProjectServicesProvider>
+                                                </ProjectEventsProvider>
+                                            </PendingFilesProvider>
+                                        </DocumentStoreProvider>
+                                    </LanguageProvider>
+                                </EngineApiProvider>
+                            </RegistryProvider>
+                        </ProjectLoader>
+                    </HCClientProvider>
+                </ProjectErrorBoundary>
+            ) : null}
         </AuthGate>
     )
 }
 
-function ProjectWorkspaceInner() {
+function ProjectWorkspaceInner({ projectId }: { projectId: string }) {
     const client = useHCClient()
     const documentStore = useDocumentStore()
     const pendingStore = usePendingFilesStore()
@@ -141,8 +158,8 @@ function ProjectWorkspaceInner() {
             const doc = documentStore.getState().documents[docId]
             if (!doc || !doc.dirty || !effectivePath) return true
             try {
-                await client.v1.project.files.update(
-                    PROJECT_ID,
+                await client.v1.map.files.update(
+                    projectId,
                     effectivePath,
                     doc.current,
                     'text/plain',
@@ -153,11 +170,11 @@ function ProjectWorkspaceInner() {
             }
             return true
         },
-        [client, documentStore, pendingStore],
+        [client, documentStore, pendingStore, projectId],
     )
 
     const useStore = useWorkspaceStore({
-        storageKey: STORAGE_KEY,
+        storageKey: workspaceStorageKey(projectId),
         initialState: createInitialWorkspaceState(),
         beforeCloseTab,
     })

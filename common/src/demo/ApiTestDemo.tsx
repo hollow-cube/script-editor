@@ -6,14 +6,14 @@ import {
     HCClient,
     HCClientProvider,
     useHCClient,
-    useV1ProjectFilesDelete,
-    useV1ProjectFilesUpdate,
-    useV1ProjectGet,
-    v1ProjectEvents,
-    v1ProjectFilesGet,
-    v1ProjectGetKey,
-    type ProjectEventEnvelope,
-    type ProjectFile,
+    useV1MapEditorBootstrap,
+    useV1MapFilesDelete,
+    useV1MapFilesUpdate,
+    v1MapEditorBootstrapKey,
+    v1MapEditorEvents,
+    v1MapFilesGet,
+    type MapEventEnvelope,
+    type MapFile,
 } from '@hollowcube/api'
 import { Badge, Button, Input, Label, ScrollArea, Textarea } from '@hollowcube/design-system'
 
@@ -100,7 +100,7 @@ function ConfigPanel({
 // ----------------------------------------------------------------------------
 
 function ProjectPanel({ projectId }: { projectId: string }) {
-    const query = useV1ProjectGet(projectId, {
+    const query = useV1MapEditorBootstrap(projectId, {
         enabled: projectId.length > 0,
         retry: 0,
     })
@@ -110,7 +110,7 @@ function ProjectPanel({ projectId }: { projectId: string }) {
         <Card
             title={
                 <span>
-                    <Code>GET</Code> /projects/{projectId || '…'}
+                    <Code>GET</Code> /maps/{projectId || '…'}/editor/bootstrap
                 </span>
             }
             actions={
@@ -132,11 +132,11 @@ function ProjectPanel({ projectId }: { projectId: string }) {
             {query.data ? (
                 <div className='flex flex-col gap-2'>
                     <div className='text-sm'>
-                        <strong>{query.data.name}</strong>{' '}
-                        <span className='text-muted-foreground'>({query.data.id})</span>
+                        <strong>{query.data.map.name}</strong>{' '}
+                        <span className='text-muted-foreground'>({query.data.map.id})</span>
                     </div>
                     {query.data.files.length === 0 ? (
-                        <p className='text-muted-foreground text-xs'>No files in project.</p>
+                        <p className='text-muted-foreground text-xs'>No files in map.</p>
                     ) : (
                         <ul className='flex flex-col gap-2'>
                             {query.data.files.map((file) => (
@@ -150,10 +150,10 @@ function ProjectPanel({ projectId }: { projectId: string }) {
     )
 }
 
-function FileItem({ projectId, file }: { projectId: string; file: ProjectFile }) {
+function FileItem({ projectId, file }: { projectId: string; file: MapFile }) {
     const client = useHCClient()
     const queryClient = useQueryClient()
-    const deleteMutation = useV1ProjectFilesDelete()
+    const deleteMutation = useV1MapFilesDelete()
     const [preview, setPreview] = useState<string | null>(null)
     const [busy, setBusy] = useState(false)
     const [error, setError] = useState<unknown>(null)
@@ -162,7 +162,7 @@ function FileItem({ projectId, file }: { projectId: string; file: ProjectFile })
         setError(null)
         setBusy(true)
         try {
-            const { bytes, contentType } = await v1ProjectFilesGet(client, projectId, file.path)
+            const { bytes, contentType } = await v1MapFilesGet(client, projectId, file.path)
             const isText = contentType.startsWith('text/') || contentType === 'application/json'
             setPreview(
                 isText
@@ -179,10 +179,12 @@ function FileItem({ projectId, file }: { projectId: string; file: ProjectFile })
     const handleDelete = () => {
         setError(null)
         deleteMutation.mutate(
-            { projectId, path: file.path },
+            { mapId: projectId, path: file.path },
             {
                 onSuccess: () => {
-                    void queryClient.invalidateQueries({ queryKey: v1ProjectGetKey(projectId) })
+                    void queryClient.invalidateQueries({
+                        queryKey: v1MapEditorBootstrapKey(projectId),
+                    })
                 },
                 onError: setError,
             },
@@ -225,19 +227,21 @@ function UploadPanel({ projectId }: { projectId: string }) {
     const [path, setPath] = useState('/notes.txt')
     const [contentType, setContentType] = useState('text/plain')
     const [body, setBody] = useState('hello world\n')
-    const [result, setResult] = useState<ProjectFile | null>(null)
+    const [result, setResult] = useState<MapFile | null>(null)
     const [error, setError] = useState<unknown>(null)
     const queryClient = useQueryClient()
-    const mutation = useV1ProjectFilesUpdate()
+    const mutation = useV1MapFilesUpdate()
 
     const handleUpload = () => {
         setError(null)
         mutation.mutate(
-            { projectId, path, body, contentType },
+            { mapId: projectId, path, body, contentType },
             {
                 onSuccess: (file) => {
                     setResult(file)
-                    void queryClient.invalidateQueries({ queryKey: v1ProjectGetKey(projectId) })
+                    void queryClient.invalidateQueries({
+                        queryKey: v1MapEditorBootstrapKey(projectId),
+                    })
                 },
                 onError: setError,
             },
@@ -248,7 +252,7 @@ function UploadPanel({ projectId }: { projectId: string }) {
         <Card
             title={
                 <span>
-                    <Code>PUT</Code> /projects/{projectId || '…'}/files/{path}
+                    <Code>PUT</Code> /maps/{projectId || '…'}/files/{path}
                 </span>
             }
         >
@@ -305,7 +309,7 @@ function EventsPanel({ projectId }: { projectId: string }) {
     const client = useHCClient()
     const queryClient = useQueryClient()
     const [running, setRunning] = useState(false)
-    const [events, setEvents] = useState<ProjectEventEnvelope[]>([])
+    const [events, setEvents] = useState<MapEventEnvelope[]>([])
     const [lastEventId, setLastEventId] = useState<string | undefined>(undefined)
     const [error, setError] = useState<unknown>(null)
     const abortRef = useRef<AbortController | null>(null)
@@ -318,13 +322,13 @@ function EventsPanel({ projectId }: { projectId: string }) {
         abortRef.current = ac
         setRunning(true)
         try {
-            for await (const evt of v1ProjectEvents(client, projectId, {
+            for await (const evt of v1MapEditorEvents(client, projectId, {
                 lastEventId,
                 signal: ac.signal,
             })) {
                 setEvents((prev) => [...prev, evt].slice(-MAX_EVENTS_SHOWN))
                 setLastEventId(evt.id)
-                queryClient.invalidateQueries({ queryKey: v1ProjectGetKey(projectId) })
+                queryClient.invalidateQueries({ queryKey: v1MapEditorBootstrapKey(projectId) })
             }
         } catch (e) {
             if (!isAbortError(e)) setError(e)
@@ -339,7 +343,7 @@ function EventsPanel({ projectId }: { projectId: string }) {
         <Card
             title={
                 <span>
-                    <Code>GET</Code> /projects/{projectId || '…'}/events
+                    <Code>GET</Code> /maps/{projectId || '…'}/editor/events
                 </span>
             }
             actions={

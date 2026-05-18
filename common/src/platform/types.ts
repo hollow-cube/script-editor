@@ -94,11 +94,16 @@ export type LaunchCodeSource = {
 export type Platform = {
     kind: PlatformKind
     storage: Storage
-    /** Absolute base URL for the API host (no trailing slash, no `/v1`). Used
-     *  on desktop to bypass the Wails `wails://` custom-scheme handler, which
-     *  drops HTTP bodies (WebKit bug 192315) — XHR/fetch must hit the Go
-     *  server directly. Web leaves this undefined and uses same-origin URLs
-     *  through the Vite proxy. */
+    /** Absolute base URL for the API host (no trailing slash, no `/v1`).
+     *  Always set in practice and always absolute — there is no same-origin
+     *  mode. Web is cross-origin (editor on `hollowcube.net`, API on
+     *  `api.hollowcube.net`); the value is env-driven and validated at
+     *  startup (`web/src/env.ts`). Desktop sets it to reach the Go server
+     *  directly, bypassing the Wails `wails://` custom-scheme handler which
+     *  drops HTTP bodies (WebKit bug 192315). `canonicalHtu` derives the DPoP
+     *  `htu` from the absolute request URL, so the base origin must match
+     *  what the backend reconstructs behind Envoy. Optional only so
+     *  test/SSR Platform impls can omit it. */
     apiBaseUrl?: string
     /** Filesystem access — desktop only. */
     fs?: FileSystem

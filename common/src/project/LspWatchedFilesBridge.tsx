@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react'
 
-import { v1ProjectEvents, useHCClient, type ProjectEventEnvelope } from '@hollowcube/api'
+import { v1MapEditorEvents, useHCClient, type MapEventEnvelope } from '@hollowcube/api'
 
 import { fileUriFromPath, useLuauLsp } from '../lsp'
 import { useProject } from './context'
@@ -35,7 +35,7 @@ export function LspWatchedFilesBridge() {
             // eslint-disable-next-line no-unmodified-loop-condition -- cancelled flipped by cleanup
             while (!cancelled) {
                 try {
-                    const stream = v1ProjectEvents(client, projectIdRef.current, {
+                    const stream = v1MapEditorEvents(client, projectIdRef.current, {
                         signal: ac.signal,
                     })
                     for await (const evt of stream) {
@@ -64,7 +64,7 @@ export function LspWatchedFilesBridge() {
 }
 
 function forward(
-    evt: ProjectEventEnvelope,
+    evt: MapEventEnvelope,
     lspClient: NonNullable<ReturnType<typeof useLuauLsp>['client']>,
 ): void {
     const uri = fileUriFromPath(evt.path)

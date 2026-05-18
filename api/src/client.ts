@@ -1,10 +1,11 @@
 import type { z } from 'zod'
 
-import { v1ProjectEvents } from './endpoints/v1-project-events'
-import { v1ProjectFilesDelete } from './endpoints/v1-project-files-delete'
-import { v1ProjectFilesGet } from './endpoints/v1-project-files-get'
-import { v1ProjectFilesUpdate } from './endpoints/v1-project-files-update'
-import { v1ProjectGet } from './endpoints/v1-project-get'
+import { v1MapEditorBootstrap } from './endpoints/v1-map-editor-bootstrap'
+import { v1MapEditorEvents } from './endpoints/v1-map-editor-events'
+import { v1MapFilesDelete } from './endpoints/v1-map-files-delete'
+import { v1MapFilesGet, type MapFilesGetConditions } from './endpoints/v1-map-files-get'
+import { v1MapFilesUpdate } from './endpoints/v1-map-files-update'
+import type { MapFilesWriteConditions } from './endpoints/v1-map-files-write'
 import { ApiError } from './error'
 
 export interface HCClientLike {
@@ -53,7 +54,27 @@ export interface HCRequestOptions<T = unknown> {
     headers?: HeadersInit
     response?: z.ZodType<T>
     signal?: AbortSignal
+    /** Per-request timeout in ms. Omitted → {@link DEFAULT_TIMEOUT_MS}.
+     *  `null` → no timeout (long-lived streams like SSE must pass this). */
+    timeoutMs?: number | null
+    /** Bounded transient retry. Defaults on for idempotent `GET`, off for
+     *  everything else. Pass `false` to opt a `GET` out (the SSE connect does
+     *  — `events.tsx` owns its own reconnect/backoff and the two must not
+     *  compound). */
+    retry?: boolean
+    /** Non-2xx statuses the caller will handle itself instead of having
+     *  `send()` throw an {@link ApiError}. Used for conditional requests:
+     *  `304` on a `If-None-Match` GET and `412` on a failed `If-Match` /
+     *  `If-None-Match: *` precondition are control flow, not errors. */
+    allowedStatuses?: readonly number[]
 }
+
+/** Default client-side request deadline. A stalled connection against real
+ *  infra would otherwise hang a save/load forever with no error and no UI. */
+export const DEFAULT_TIMEOUT_MS = 25_000
+
+const MAX_ATTEMPTS = 3
+const BACKOFF_CAP_MS = 20_000
 
 export class HCClient {
     readonly baseUrl: string
@@ -120,86 +141,170 @@ export class HCClient {
             return headers
         }
 
+        const userSignal = options?.signal
+        const timeoutMs =
+            options?.timeoutMs === undefined ? DEFAULT_TIMEOUT_MS : options.timeoutMs
+
+        // One network call. A fresh timeout is armed per attempt so every
+        // retry gets a full budget, while the caller's signal spans all of
+        // them. A timeout abort is mapped to a flagged ApiError; a caller
+        // abort passes through untouched as cancellation, not an error.
         const attempt = async (headers: Headers): Promise<Response> => {
+            const timeoutSignal =
+                typeof timeoutMs === 'number' && timeoutMs > 0
+                    ? AbortSignal.timeout(timeoutMs)
+                    : null
+            const signal =
+                userSignal && timeoutSignal
+                    ? AbortSignal.any([userSignal, timeoutSignal])
+                    : (timeoutSignal ?? userSignal)
+
             let response: Response
             try {
-                response = await this.fetch(url, {
-                    method,
-                    body: options?.body,
-                    headers,
-                    signal: options?.signal,
-                })
+                response = await this.fetch(url, { method, body: options?.body, headers, signal })
             } catch (cause) {
+                if (timeoutSignal?.aborted && !userSignal?.aborted) {
+                    throw ApiError.timeout(method, url, timeoutMs as number, cause)
+                }
                 // Preserve user-initiated cancellation untouched so consumers
                 // can distinguish abort from a real failure.
                 if (cause instanceof DOMException && cause.name === 'AbortError') throw cause
                 throw ApiError.network(method, url, cause)
             }
-            if (!response.ok) throw await ApiError.fromResponse(response, { method, url })
+            if (!response.ok && !options?.allowedStatuses?.includes(response.status)) {
+                throw await ApiError.fromResponse(response, { method, url })
+            }
             return response
         }
 
-        const initialToken = auth && applyAuth ? await auth.getAccessToken() : null
-        try {
-            return await attempt(await composeHeaders(initialToken))
-        } catch (err) {
-            // Single 401 → refresh-once → retry. Refresh single-flight lives in
-            // the token manager behind onUnauthorized(); this is the only
-            // retry site (request()/SSE sit above send()).
-            if (!auth || !applyAuth || !(err instanceof ApiError) || err.status !== 401) {
-                throw err
+        // Single 401 → refresh-once → retry. Refresh single-flight lives in
+        // the token manager behind onUnauthorized(); this is the only place
+        // that handles 401 (request()/SSE sit above send()).
+        const once = async (): Promise<Response> => {
+            const initialToken = auth && applyAuth ? await auth.getAccessToken() : null
+            try {
+                return await attempt(await composeHeaders(initialToken))
+            } catch (err) {
+                if (!auth || !applyAuth || !(err instanceof ApiError) || err.status !== 401) {
+                    throw err
+                }
+                const refreshed = await auth.onUnauthorized()
+                if (refreshed === null) throw err
+                return await attempt(await composeHeaders(refreshed))
             }
-            const refreshed = await auth.onUnauthorized()
-            if (refreshed === null) throw err
-            return await attempt(await composeHeaders(refreshed))
         }
+
+        // Bounded transient retry for idempotent GETs only. Writes
+        // (PUT/POST/DELETE) are surfaced immediately — never silently
+        // re-applied. The 401→refresh path above is independent of this.
+        const retryEnabled = method === 'GET' && options?.retry !== false
+        const maxAttempts = retryEnabled ? MAX_ATTEMPTS : 1
+
+        let lastErr: unknown
+        for (let i = 0; i < maxAttempts; i++) {
+            try {
+                return await once()
+            } catch (err) {
+                lastErr = err
+                if (i >= maxAttempts - 1 || !isTransient(err)) throw err
+                // A caller-cancel during backoff stops the retries and
+                // propagates the cancellation, not the transient error.
+                await abortableDelay(backoffMs(i, err), userSignal)
+            }
+        }
+        throw lastErr
     }
+}
+
+/** Retryable iff no HTTP response or a transient server signal: network
+ *  failure / timeout (status 0), 429, or any 5xx. 4xx (incl. the
+ *  already-handled 401) are caller errors and never retried. */
+function isTransient(err: unknown): boolean {
+    return (
+        err instanceof ApiError &&
+        (err.status === 0 || err.status === 429 || err.status >= 500)
+    )
+}
+
+/** Jittered exponential backoff, honoring a server `Retry-After` when present
+ *  (clamped so a hostile value can't wedge the editor). */
+function backoffMs(attemptIndex: number, err: unknown): number {
+    if (err instanceof ApiError && err.retryAfterMs !== undefined) {
+        return Math.min(err.retryAfterMs, BACKOFF_CAP_MS)
+    }
+    const base = Math.min(BACKOFF_CAP_MS, 300 * 2 ** attemptIndex)
+    return base + Math.random() * 300
+}
+
+function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
+    return new Promise((resolve, reject) => {
+        if (signal?.aborted) {
+            reject(signal.reason ?? new DOMException('aborted', 'AbortError'))
+            return
+        }
+        const timer = setTimeout(() => {
+            signal?.removeEventListener('abort', onAbort)
+            resolve()
+        }, ms)
+        const onAbort = () => {
+            clearTimeout(timer)
+            reject(signal?.reason ?? new DOMException('aborted', 'AbortError'))
+        }
+        signal?.addEventListener('abort', onAbort, { once: true })
+    })
 }
 
 export class HCV1Client {
     readonly client: HCClient
 
-    #project: HCV1ProjectClient | null = null
+    #map: HCV1MapClient | null = null
 
     constructor(client: HCClient) {
         this.client = client
     }
 
-    get project(): HCV1ProjectClient {
-        return (this.#project ??= new HCV1ProjectClient(this))
+    get map(): HCV1MapClient {
+        return (this.#map ??= new HCV1MapClient(this))
     }
 }
 
-export class HCV1ProjectClient implements HCClientLike {
+export class HCV1MapClient implements HCClientLike {
     readonly client: HCClient
 
-    #files: HCV1ProjectFilesClient | null = null
+    #files: HCV1MapFilesClient | null = null
 
     constructor(parent: HCV1Client) {
         this.client = parent.client
     }
 
-    get = (projectId: string) => v1ProjectGet(this.client, projectId)
+    editorBootstrap = (mapId: string) => v1MapEditorBootstrap(this.client, mapId)
 
-    events = (projectId: string, opts?: { lastEventId?: string; signal?: AbortSignal }) =>
-        v1ProjectEvents(this.client, projectId, opts)
+    editorEvents = (mapId: string, opts?: { lastEventId?: string; signal?: AbortSignal }) =>
+        v1MapEditorEvents(this.client, mapId, opts)
 
-    get files(): HCV1ProjectFilesClient {
-        return (this.#files ??= new HCV1ProjectFilesClient(this))
+    get files(): HCV1MapFilesClient {
+        return (this.#files ??= new HCV1MapFilesClient(this))
     }
 }
 
-export class HCV1ProjectFilesClient implements HCClientLike {
+export class HCV1MapFilesClient implements HCClientLike {
     readonly client: HCClient
 
-    constructor(parent: HCV1ProjectClient) {
+    constructor(parent: HCV1MapClient) {
         this.client = parent.client
     }
 
-    get = (projectId: string, path: string) => v1ProjectFilesGet(this.client, projectId, path)
+    get = (mapId: string, path: string, opts?: MapFilesGetConditions) =>
+        v1MapFilesGet(this.client, mapId, path, opts)
 
-    update = (projectId: string, path: string, body: BodyInit, contentType?: string) =>
-        v1ProjectFilesUpdate(this.client, projectId, path, body, contentType)
+    update = (
+        mapId: string,
+        path: string,
+        body: BodyInit,
+        contentType?: string,
+        opts?: MapFilesWriteConditions,
+    ) => v1MapFilesUpdate(this.client, mapId, path, body, contentType, opts)
 
-    delete = (projectId: string, path: string) => v1ProjectFilesDelete(this.client, projectId, path)
+    delete = (mapId: string, path: string, opts?: MapFilesWriteConditions) =>
+        v1MapFilesDelete(this.client, mapId, path, opts)
 }

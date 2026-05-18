@@ -18,11 +18,7 @@ import {
 } from 'lucide-react'
 import type { Diagnostic } from 'vscode-languageserver-types'
 
-import {
-    useV1ProjectFilesGet,
-    useV1ProjectFilesUpdate,
-    type ProjectFileBytes,
-} from '@hollowcube/api'
+import { useV1MapFilesGet, useV1MapFilesUpdate, type MapFileBytes } from '@hollowcube/api'
 import { Button, cn, Input, Label } from '@hollowcube/design-system'
 
 import { CodeEditor, type CodeEditorApi, type UsageMatch } from '../../editor'
@@ -49,8 +45,8 @@ import { TEXT_EDITOR_KIND } from './text-kind'
 
 // Generic plain-text editor. Handles two payload shapes:
 //
-//   • `{ path }`       — an existing or pending-with-path project file. Bytes
-//                        are fetched via `useV1ProjectFilesGet`, decoded as
+//   • `{ path }`       — an existing or pending-with-path map file. Bytes
+//                        are fetched via `useV1MapFilesGet`, decoded as
 //                        UTF-8, and pushed into a Document keyed by the path.
 //   • `{ tempId }`     — a purely untitled file (Cmd+N). No fetch; the
 //                        Document starts empty. Saving prompts for a path.
@@ -166,7 +162,7 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
     const { useStore } = useWorkspaceContext()
     const documentStore = useDocumentStore()
     const pendingStore = usePendingFilesStore()
-    const updateMutation = useV1ProjectFilesUpdate()
+    const updateMutation = useV1MapFilesUpdate()
     const services = useProjectServices()
     const { openEditor } = useProjectActions()
     const editorApiRef = useRef<CodeEditorApi | null>(null)
@@ -188,7 +184,7 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
         return `unsaved:${tab.id}`
     }, [effectivePath, payload.tempId, tab.id])
 
-    const fileQuery = useV1ProjectFilesGet(project.id, effectivePath ?? '', {
+    const fileQuery = useV1MapFilesGet(project.id, effectivePath ?? '', {
         enabled: isExistingFile,
         retry: 0,
     })
@@ -397,7 +393,7 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
             const body = documentStore.getState().documents[docId]?.current ?? ''
             try {
                 await updateMutation.mutateAsync({
-                    projectId: project.id,
+                    mapId: project.id,
                     path,
                     body,
                     contentType: 'text/plain',
@@ -510,7 +506,7 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
     )
 }
 
-function decodeText(bytes: ProjectFileBytes): string {
+function decodeText(bytes: MapFileBytes): string {
     try {
         return new TextDecoder('utf-8', { fatal: false }).decode(bytes.bytes)
     } catch {

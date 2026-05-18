@@ -50,8 +50,21 @@ describe('redeemLaunchCode', () => {
             },
             accessToken: 'acc-tok',
             accessExpiresAt: '2099-01-01T00:00:00Z',
+            // Grant carried no project → null (gate shows "open from in-game").
+            project: null,
         })
         expect(await sessionStore.get('acct-1')).not.toBeNull()
+    })
+
+    test('ok → threads the granted project id through the outcome', async () => {
+        const out = await redeemLaunchCode('ok-code', {
+            client: fakeClient(async () => ({ ...OK_RESPONSE, project: 'proj-42' })),
+            keyStore: await fakeKeyStore(),
+            sessionStore: createMemorySessionStore(),
+            clientKind: 'web',
+        })
+        expect(out.status).toBe('ok')
+        expect(out.status === 'ok' && out.project).toBe('proj-42')
     })
 
     test('concurrent calls with the same code redeem exactly once', async () => {
