@@ -30,9 +30,6 @@ const platform = {
     launchCode: createHashLaunchCodeSource(),
 }
 
-// generouted's <Routes> builds its own browser router with no basename, so it
-// ignores Vite's `base`. Build the router ourselves from its exported route
-// tree so client navigation works under the `/editor` subpath.
 const basename = import.meta.env.BASE_URL.replace(/\/$/u, '') || '/'
 const router = createBrowserRouter(routes, { basename })
 
