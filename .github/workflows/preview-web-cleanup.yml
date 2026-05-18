@@ -1,0 +1,55 @@
+name: Preview Web Cleanup
+
+on:
+    pull_request:
+        types: [closed]
+
+permissions:
+    contents: read
+    pull-requests: write
+
+# Separate workflow with a non-cancelling group so teardown can't be cancelled
+# by a superseding preview-web run.
+concurrency:
+    group: preview-web-cleanup-${{ github.event.number }}
+
+jobs:
+    teardown:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Import Secrets
+              uses: hollow-cube/actions/secrets@main
+              with:
+                  token: ${{ secrets.VAULT_TOKEN }}
+                  path: global/github
+
+            - uses: actions/checkout@v4
+
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: latest
+
+            # wrangler 4.x requires Node >= 22; the runner's default is Node 20.
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+
+            - name: Install
+              run: bun install --frozen-lockfile
+
+            # Deleting the Worker cascades: its custom domain, the
+            # auto-created DNS record, and the edge cert are all removed too.
+            # `|| true` tolerates a Worker that was never created (e.g.
+            # preview-web never succeeded).
+            - name: Delete preview Worker
+              working-directory: web
+              run: bunx wrangler delete --name "script-editor-pr-${PR}" || true
+              env:
+                  PR: ${{ github.event.number }}
+
+            - name: Update preview comment
+              uses: marocchino/sticky-pull-request-comment@v2
+              with:
+                  header: web-preview
+                  message: |
+                      **Web preview:** torn down (PR closed).

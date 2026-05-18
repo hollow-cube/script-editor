@@ -20,6 +20,13 @@ You'll be automatically prompted by CLA Assistant when you open your first pull 
 - Follow go formatting conventions. Please avoid PRs that only change formatting or style.
 - We don't have a set review period, please be patient while we review.
 
+## Preview Deployments
+
+When you open a pull request, a live preview of the editor is built from your branch and deployed automatically.
+A bot comment on the PR links it at `https://script-editor-<PR-number>.preview.hollowcube.dev/editor`. The comment updates on
+every push, so the preview always reflects your latest commit. The preview talks to the production API. It is
+removed automatically when the PR is closed or merged — nothing for you to set up or tear down.
+
 ## Communication
 
 For questions, discussion, or if you're unsure whether a change would be welcome, please ask in the`#general-dev`

@@ -1,0 +1,76 @@
+name: Preview Web
+
+on:
+    pull_request:
+        types: [opened, synchronize, reopened]
+
+permissions:
+    contents: read
+    pull-requests: write
+
+concurrency:
+    group: preview-web-${{ github.event.number }}
+    cancel-in-progress: true
+
+jobs:
+    ci:
+        uses: ./.github/workflows/ci.yml
+
+    deploy-preview:
+        needs: ci
+        runs-on: ubuntu-latest
+        steps:
+            - name: Import Secrets
+              uses: hollow-cube/actions/secrets@main
+              with:
+                  token: ${{ secrets.VAULT_TOKEN }}
+                  path: global/github
+
+            - uses: actions/checkout@v4
+
+            - uses: oven-sh/setup-bun@v2
+              with:
+                  bun-version: latest
+
+            # wrangler 4.x requires Node >= 22; the runner's default is Node 20.
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+
+            - name: Install
+              run: bun install --frozen-lockfile
+
+            - name: Build
+              run: bun --filter @hollowcube/web build
+
+            # One artifact; the API base is resolved at runtime from the
+            # hostname (script-editor-<n>.preview.hollowcube.dev -> production
+            # API). The `/editor` prefix-strip Worker is host-agnostic, reused.
+            #
+            # Deployed as a Workers *custom domain* (not a route): Cloudflare
+            # auto-provisions the DNS record + an edge cert for this exact
+            # hostname and removes both on `wrangler delete` — no wildcard DNS
+            # or ACM. `custom_domain` has no deploy flag, so patch the
+            # plugin-generated config in place (kept in its own dir so the
+            # relative main/assets paths still resolve).
+            - name: Deploy preview Worker (custom domain)
+              working-directory: web
+              run: |
+                  cfg=$(ls ./dist/*/wrangler.json | head -1)
+                  jq --arg name "script-editor-pr-${PR}" \
+                     --arg host "script-editor-${PR}.preview.hollowcube.dev" \
+                     '.name = $name | .routes = [{"pattern": $host, "custom_domain": true}]' \
+                     "$cfg" > "$cfg.tmp"
+                  mv "$cfg.tmp" "$cfg"
+                  bunx wrangler deploy -c "$cfg"
+              env:
+                  PR: ${{ github.event.number }}
+
+            - name: Comment preview URL
+              uses: marocchino/sticky-pull-request-comment@v2
+              with:
+                  header: web-preview
+                  message: |
+                      **Web preview:** https://script-editor-${{ github.event.number }}.preview.hollowcube.dev/editor/
+
+                      Built from this PR, talks to the production API. Updates on every push; removed when the PR is closed or merged.
