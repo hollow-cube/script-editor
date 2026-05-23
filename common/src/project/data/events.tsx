@@ -8,28 +8,19 @@ import {
     useRef,
     type ReactNode,
 } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 
-import {
-    ApiError,
-    useHCClient,
-    v1MapEditorBootstrapKey,
-    v1MapEditorEvents,
-    v1MapFilesGetKey,
-    type MapEventEnvelope,
-} from '@hollowcube/api'
+import { ApiError, v1MapEditorEvents } from '@hollowcube/api'
 
-import { useDocumentStore } from '../documents'
+import { useApp } from '../../model'
 
 // Subscribes to the project events SSE stream and exposes connection state for
-// the connection indicator. Each event:
-//
-//  • Invalidates the project metadata query so the file tree refreshes.
-//
-//  • If an open document's path matches the event AND the doc is clean,
-//    invalidates that file's content query so the open editor refetches.
-//    Dirty documents are intentionally untouched — conflict resolution is
-//    out of scope here.
+// the connection indicator. Phase 3 dropped the React Query invalidation that
+// used to live on event delivery; Phase 4 will move this whole component into
+// a model-layer `ServerEventsConnection` service that dispatches into
+// `FileTreeService.upsert/remove` and `TextModelService.handleExternalChange`
+// directly. Until then events flow but have no side effect beyond connection
+// status — there is a brief regression where external file changes don't
+// refresh the tree.
 //
 // Reconnect policy: AbortError exits cleanly; ApiError (HTTP response error)
 // stops the stream and surfaces the failure for manual retry; everything else
@@ -99,9 +90,7 @@ type ProjectEventsProviderProps = {
 }
 
 export function ProjectEventsProvider({ projectId, children }: ProjectEventsProviderProps) {
-    const client = useHCClient()
-    const queryClient = useQueryClient()
-    const documentStore = useDocumentStore()
+    const { client } = useApp()
 
     const [state, dispatch] = useReducer(streamReducer, {
         status: 'idle',
@@ -127,20 +116,17 @@ export function ProjectEventsProvider({ projectId, children }: ProjectEventsProv
                         lastEventId: lastEventIdRef.current,
                         signal: ac.signal,
                     })
-                    // Mark connected as soon as the iterator hands us anything
-                    // — practically, on the first event. SSE doesn't surface
-                    // a separate "connected" signal otherwise.
                     let receivedFirst = false
                     dispatch({ type: 'connected' })
                     for await (const evt of stream) {
                         if (cancelled) break
                         receivedFirst = true
                         attempt = 0
-                        applyEvent(evt, queryClient, documentStore, projectId)
+                        // Side-effect-on-event is intentionally absent in
+                        // Phase 3. Phase 4 wires file-tree / text-model
+                        // refreshes into a model-layer ServerEventsConnection.
                         dispatch({ type: 'event', id: evt.id })
                     }
-                    // Stream ended without an error and without an abort —
-                    // treat as a soft disconnect and reconnect.
                     if (cancelled) break
                     void receivedFirst
                     attempt += 1
@@ -198,25 +184,6 @@ export function useProjectConnection(): ProjectConnection {
         throw new Error('useProjectConnection must be used inside <ProjectEventsProvider>')
     }
     return ctx
-}
-
-// --- helpers ---
-
-type QueryClientLike = ReturnType<typeof useQueryClient>
-type DocStoreLike = ReturnType<typeof useDocumentStore>
-
-function applyEvent(
-    evt: MapEventEnvelope,
-    queryClient: QueryClientLike,
-    documentStore: DocStoreLike,
-    projectId: string,
-) {
-    queryClient.invalidateQueries({ queryKey: v1MapEditorBootstrapKey(projectId) })
-    const docs = documentStore.getState().documents
-    const matching = docs[evt.path]
-    if (matching && !matching.dirty) {
-        queryClient.invalidateQueries({ queryKey: v1MapFilesGetKey(projectId, evt.path) })
-    }
 }
 
 function backoffMs(attempt: number): number {

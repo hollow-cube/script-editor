@@ -1,23 +1,25 @@
 // `Project` — the per-open-project service container.
 //
-// Phase 1 holds only the two foundational services every later phase
-// depends on: `ContextService` (for action when-clauses) and
-// `ActionRegistry` (the command bus). Subsequent phases add:
+// Construction order is dependency order; `dispose()` runs in reverse so
+// downstream services can still reach their deps while shutting down.
 //
+//   • Phase 1 — `context: ContextService`, `actions: ActionRegistry`
 //   • Phase 2 — `layout: WorkspaceLayoutService`
-//   • Phase 3 — `bootstrap`, `fileTree`, `textModels`, `pendingFiles`,
-//               `activeEditor`
+//   • Phase 3 — `activeEditor`, `pendingFiles`, `fileTree`, `bootstrap`,
+//               `textModels`
 //   • Phase 4 — `lsp`, `engineApi`, `events`, `search`, `languages`
-//
-// Disposal is reverse construction order: services that depend on others
-// stop first so they can read their deps cleanly while shutting down.
 
 import type { HCClient } from '@hollowcube/api'
 
 import type { Platform } from '../platform'
 import type { WorkspaceState } from '../workspace/types'
 import { ActionRegistry } from './actions/ActionRegistry'
+import { ActiveEditorRegistry } from './active-editor/ActiveEditorRegistry'
+import { ProjectBootstrap } from './bootstrap/ProjectBootstrap'
 import { ContextService } from './context/ContextService'
+import { FileTreeService } from './files/FileTreeService'
+import { PendingFilesService } from './files/PendingFilesService'
+import { TextModelService } from './text-models/TextModelService'
 import { WorkspaceLayoutService } from './workspace/WorkspaceLayoutService'
 
 export interface ProjectDeps {
@@ -37,13 +39,16 @@ export class Project {
     readonly context: ContextService
     readonly actions: ActionRegistry
     readonly layout: WorkspaceLayoutService
+    readonly activeEditor: ActiveEditorRegistry
+    readonly pendingFiles: PendingFilesService
+    readonly fileTree: FileTreeService
+    readonly bootstrap: ProjectBootstrap
+    readonly textModels: TextModelService
 
     constructor(deps: ProjectDeps) {
         this.projectId = deps.projectId
         this.platform = deps.platform
         this.client = deps.client
-        // Construction order matches dependency order; dispose runs in
-        // reverse. `actions` depends on `context` (when-clause evaluation).
         this.context = new ContextService()
         this.actions = new ActionRegistry({ context: this.context })
         this.layout = new WorkspaceLayoutService({
@@ -51,12 +56,35 @@ export class Project {
             storageKey: `hc-project:${deps.projectId}`,
             initialState: deps.initialLayout,
         })
+        this.activeEditor = new ActiveEditorRegistry()
+        this.pendingFiles = new PendingFilesService()
+        this.fileTree = new FileTreeService({
+            projectId: deps.projectId,
+            client: deps.client,
+        })
+        this.bootstrap = new ProjectBootstrap({
+            projectId: deps.projectId,
+            client: deps.client,
+            platform: deps.platform,
+            fileTree: this.fileTree,
+        })
+        this.textModels = new TextModelService({
+            projectId: deps.projectId,
+            client: deps.client,
+            fileTree: this.fileTree,
+            pendingFiles: this.pendingFiles,
+        })
+        // Kick off the bootstrap fetch.
+        this.bootstrap.start()
     }
 
     dispose(): void {
-        // Reverse construction order. Later phases will add more services
-        // above the foundational two; insert their disposals at the top
-        // of this method.
+        // Reverse construction order.
+        this.textModels.dispose()
+        this.bootstrap.dispose()
+        this.fileTree.dispose()
+        this.pendingFiles.dispose()
+        this.activeEditor.dispose()
         this.layout.dispose()
         this.actions.dispose()
         this.context.dispose()

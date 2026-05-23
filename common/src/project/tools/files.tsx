@@ -1,18 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { FilePlusIcon, FilesIcon, PencilIcon, Trash2Icon } from 'lucide-react'
 
-import { useHCClient, useV1MapFilesDelete, type MapFile } from '@hollowcube/api'
+import { v1MapFilesGet } from '@hollowcube/api'
 import { FileTree, type FileTreeNode, Input, ScrollArea } from '@hollowcube/design-system'
 
 import { listAllLanguageMimes, useLanguages } from '../../editor/languages'
 import { useLuauLsp, useDiagnosticPaths } from '../../lsp'
+import { useApp, useProject } from '../../model'
+import {
+    useFileTreeService,
+    usePendingFiles,
+    usePendingFilesService,
+} from '../../model/files'
+import { useSignal } from '../../model/foundation/react'
 import { useLayout, type WorkspaceLayoutService } from '../../model/workspace'
 import { findLeaf, selectTabLocations } from '../../workspace'
 import { ActionContextMenu, useProjectActions } from '../actions'
 import { type Action } from '../actions/types'
-import { useProject } from '../context'
-import { usePendingFiles, usePendingFilesStore } from '../data/pending-files'
-import { useDocumentStore } from '../documents'
 import { TEXT_EDITOR_KIND } from '../editors/text'
 import { type ToolDefinition } from '../registry'
 import { buildFileTree, isTextContentType } from './files-tree'
@@ -38,23 +42,19 @@ type NewFileTarget = { parent: string } | null
 
 function FilesPane() {
     const project = useProject()
+    const { client: hcClient } = useApp()
+    const fileTreeSvc = useFileTreeService()
+    const files = useSignal(fileTreeSvc.list)
+    const filesByPath = useSignal(fileTreeSvc.files)
+    const pendingSvc = usePendingFilesService()
     const pending = usePendingFiles()
-    const pendingStore = usePendingFilesStore()
+    const textModels = project.textModels
     const { openEditor } = useProjectActions()
-    const deleteMutation = useV1MapFilesDelete()
     const layout = useLayout()
     const languages = useLanguages()
     const languageMimes = useMemo(() => listAllLanguageMimes(languages), [languages])
     const { client: lspClient } = useLuauLsp()
     const errorPaths = useDiagnosticPaths(lspClient, 1)
-    const hcClient = useHCClient()
-    const documentStore = useDocumentStore()
-
-    const filesByPath = useMemo(() => {
-        const map = new Map<string, MapFile>()
-        for (const f of project.files) map.set(f.path, f)
-        return map
-    }, [project.files])
 
     const [ctx, setCtx] = useState<CtxMenuState>({ open: false })
     const [newFile, setNewFile] = useState<NewFileTarget>(null)
@@ -69,7 +69,7 @@ function FilesPane() {
             if (!trimmed) return
             const parent = newFile?.parent ?? ''
             const fullPath = parent ? `${parent}/${trimmed}` : trimmed
-            const tempId = pendingStore.getState().addAtPath(fullPath)
+            const tempId = pendingSvc.addAtPath(fullPath)
             openEditor({
                 kind: TEXT_EDITOR_KIND,
                 payload: { tempId },
@@ -77,7 +77,7 @@ function FilesPane() {
                 title: trimmed.split('/').pop() ?? trimmed,
             })
         },
-        [newFile, openEditor, pendingStore],
+        [newFile, openEditor, pendingSvc],
     )
 
     const handleCancelNew = useCallback(() => setNewFile(null), [])
@@ -93,7 +93,7 @@ function FilesPane() {
             // the pending entry and reroute any tab payloads.
             if (sourceId.startsWith('pending:')) {
                 const tempId = sourceId.slice('pending:'.length)
-                pendingStore.getState().assignPath(tempId, newPath)
+                pendingSvc.assignPath(tempId, newPath)
                 return
             }
             const oldPath = sourceId
@@ -102,17 +102,17 @@ function FilesPane() {
                 setOpenError(`${newPath}: already exists`)
                 return
             }
-            // Prefer the document store's in-memory current text (dirty edits
-            // would be lost on GET). Falls back to the server when the file
-            // isn't open in any tab.
-            const docState = documentStore.getState().documents[oldPath]
+            // Prefer the open TextModel's in-memory content (dirty edits
+            // would be lost on a server GET). Falls back to the server
+            // when the file isn't open in any tab.
+            const openModel = textModels.get(oldPath)
             let body: string
             let contentType = 'text/plain'
-            if (docState) {
-                body = docState.current
+            if (openModel) {
+                body = openModel.content.peek()
             } else {
                 try {
-                    const bytes = await hcClient.v1.map.files.get(project.id, oldPath)
+                    const bytes = await v1MapFilesGet(hcClient, project.projectId, oldPath)
                     body = new TextDecoder('utf-8', { fatal: false }).decode(bytes.bytes)
                     contentType = bytes.contentType || 'text/plain'
                 } catch (e) {
@@ -120,27 +120,20 @@ function FilesPane() {
                     return
                 }
             }
-            try {
-                await hcClient.v1.map.files.update(project.id, newPath, body, contentType)
-            } catch (e) {
-                setOpenError(`${newPath}: write failed (${formatErr(e)})`)
+            const result = await fileTreeSvc.rename(oldPath, newPath, body, contentType)
+            if (!result.ok) {
+                if (result.error.kind === 'exists') {
+                    setOpenError(`${newPath}: already exists`)
+                } else if (result.error.kind === 'write') {
+                    setOpenError(`${newPath}: write failed (${formatErr(result.error.cause)})`)
+                } else {
+                    setOpenError(`${oldPath}: failed (${formatErr(result.error.cause)})`)
+                }
                 return
             }
-            try {
-                await hcClient.v1.map.files.delete(project.id, oldPath)
-            } catch (e) {
-                // The new path is already written; the old will be tidied by
-                // the next refresh. Surface the error but don't roll back.
-                console.warn('[files.move] delete old failed', e)
-            }
-            // Repoint any open tabs from oldPath to newPath. Document store
-            // entries keyed by path also need to migrate so the open editor
-            // stays attached after the path swap.
-            const docs = documentStore.getState().documents
-            if (docs[oldPath]) {
-                documentStore.getState().openDocument(newPath, docs[oldPath].current)
-                documentStore.getState().closeDocument(oldPath, { force: true })
-            }
+            // Repoint the open TextModel (if any) from oldPath to newPath.
+            textModels.handleRename(oldPath, newPath)
+            // Update any open tabs whose payload references oldPath.
             const state = layout.state.peek()
             const locations = selectTabLocations(state)
             for (const [tabId, loc] of locations) {
@@ -156,7 +149,7 @@ function FilesPane() {
                 })
             }
         },
-        [documentStore, filesByPath, hcClient, pendingStore, project.id, layout],
+        [fileTreeSvc, filesByPath, hcClient, pendingSvc, project.projectId, layout, textModels],
     )
 
     const handleCommitRename = useCallback(
@@ -165,13 +158,13 @@ function FilesPane() {
             setRenameTarget(null)
             if (!trimmed) return
             const parent = sourceId.startsWith('pending:')
-                ? (pendingStore.getState().pending[sourceId.slice('pending:'.length)]?.path ?? '')
+                ? (pendingSvc.get(sourceId.slice('pending:'.length))?.path ?? '')
                 : sourceId
             const parentDir = parent.includes('/') ? parent.slice(0, parent.lastIndexOf('/')) : ''
             const newPath = parentDir ? `${parentDir}/${trimmed}` : trimmed
             void moveFileToPath(sourceId, newPath)
         },
-        [moveFileToPath, pendingStore],
+        [moveFileToPath, pendingSvc],
     )
 
     const handleCancelRename = useCallback(() => setRenameTarget(null), [])
@@ -179,10 +172,10 @@ function FilesPane() {
     const renameInitialName = useMemo(() => {
         if (!renameTarget) return ''
         const path = renameTarget.startsWith('pending:')
-            ? (pendingStore.getState().pending[renameTarget.slice('pending:'.length)]?.path ?? '')
+            ? (pendingSvc.get(renameTarget.slice('pending:'.length))?.path ?? '')
             : renameTarget
         return path.split('/').pop() ?? ''
-    }, [renameTarget, pendingStore])
+    }, [renameTarget, pendingSvc])
 
     const nodes = useMemo(() => {
         const newFileExtra = newFile
@@ -212,13 +205,13 @@ function FilesPane() {
                   ),
               }
             : undefined
-        return buildFileTree(project.files, pending, {
+        return buildFileTree(files, pending, {
             newFile: newFileExtra,
             rename: renameExtra,
             errorPaths,
         })
     }, [
-        project.files,
+        files,
         pending,
         newFile,
         handleCommitNew,
@@ -276,12 +269,12 @@ function FilesPane() {
             // Derive new path: <targetFolder>/<sourceBasename>. For root drops
             // the host passes targetFolderId === '' but the FileTree only
             // reports folder drops today.
-            const basename = sourceIdBasename(sourceId, pendingStore)
+            const basename = sourceIdBasename(sourceId, pendingSvc)
             if (!basename) return
             const newPath = targetFolderId ? `${targetFolderId}/${basename}` : basename
             void moveFileToPath(sourceId, newPath)
         },
-        [moveFileToPath, pendingStore],
+        [moveFileToPath, pendingSvc],
     )
 
     const handleContext = useCallback((e: React.MouseEvent, node: FileTreeNode | null) => {
@@ -296,9 +289,9 @@ function FilesPane() {
             // tab unmount cancels the editor's pending autosave timer, so we
             // don't race the delete with a save that would resurrect the file.
             closeTabsForPath(layout, path)
-            deleteMutation.mutate({ mapId: project.id, path })
+            void fileTreeSvc.delete(path)
         },
-        [deleteMutation, project.id, layout],
+        [fileTreeSvc, layout],
     )
 
     // Keyboard handler on the scroll container: Delete removes the selection,
@@ -460,12 +453,11 @@ function buildFilesContextActions(
 
 function sourceIdBasename(
     id: string,
-    pendingStore: ReturnType<typeof usePendingFilesStore>,
+    pendingSvc: ReturnType<typeof usePendingFilesService>,
 ): string | null {
     if (id.startsWith('pending:')) {
         const tempId = id.slice('pending:'.length)
-        const entry = pendingStore.getState().pending[tempId]
-        const path = entry?.path
+        const path = pendingSvc.get(tempId)?.path
         if (!path) return null
         return path.split('/').pop() ?? null
     }

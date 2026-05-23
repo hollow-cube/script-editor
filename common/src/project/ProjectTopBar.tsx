@@ -3,10 +3,10 @@ import { PanelBottomIcon, PanelLeftIcon, PanelRightIcon, SettingsIcon } from 'lu
 
 import { Button, cn } from '@hollowcube/design-system'
 
+import { useProjectMetadata } from '../model/bootstrap'
 import { useDocksVisible, useLayout } from '../model/workspace'
 import { usePlatform } from '../platform'
 import { type DockId } from '../workspace'
-import { useProject } from './context'
 import { ConnectionIndicator } from './data/connection-indicator'
 
 /** Width reserved on macOS for the system traffic-light buttons. */
@@ -24,7 +24,7 @@ const noDragRegionStyle = {
 } as CSSProperties
 
 export function ProjectTopBar() {
-    const project = useProject()
+    const metadata = useProjectMetadata()
     const { kind: platform } = usePlatform()
     const layout = useLayout()
     const docksVisible = useDocksVisible()
@@ -77,7 +77,7 @@ export function ProjectTopBar() {
                     className='text-foreground text-sm font-medium tracking-tight'
                     variant='ghost'
                 >
-                    {project.name}
+                    {metadata?.name ?? ''}
                 </Button>
             </div>
 

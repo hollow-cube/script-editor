@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
 
-import { useHCClient, v1MapFilesGet, type HCClient, type MapFile } from '@hollowcube/api'
-import { v1MapFilesGetKey } from '@hollowcube/api'
+import { v1MapFilesGet, type HCClient, type MapFile } from '@hollowcube/api'
 
 import { listAllLanguageMimes, useLanguages } from '../../../editor/languages'
-import { useProject } from '../../context'
+import { useApp, useProject } from '../../../model'
+import { useFileTreeService } from '../../../model/files'
+import { useSignal } from '../../../model/foundation/react'
 import { isTextContentType } from '../../tools/files-tree'
 import { type SearchResult } from '../types'
 
@@ -13,22 +13,11 @@ type TextResult = Extract<SearchResult, { kind: 'text' }>
 
 // Client-side cross-file text search.
 //
-// On each query: enumerate text files, fetch their content (cached via
-// TanStack Query so re-queries are instant), grep with a case-insensitive
-// substring match, return snippets with line/column for jump-to.
-//
-// Cost control:
-//   • CONCURRENCY caps how many file fetches run in parallel.
-//   • PER_FILE_LIMIT caps matches per file (avoids one file producing 10k hits).
-//   • TOTAL_LIMIT caps total matches surfaced.
-//   • Aborts the in-flight batch when the query changes — the AbortController
-//     short-circuits both the network and the per-file scan loop.
-//
-// Caching: file content lives in TanStack Query under the same key as
-// `useV1MapFilesGet`. Two consequences:
-//   1. Repeated text searches for the same query don't re-download files.
-//   2. Editor tabs that already loaded a file share its cached bytes with the
-//      grepper (no double-fetch).
+// Phase 3 dropped TanStack Query, so the per-file content cache is gone too.
+// In practice text-search rarely repeats the exact same query, and editor
+// tabs hold their own bytes via `TextModelService` now; the cost of a re-grep
+// is the same wire-time the cached version had. If repeat-query performance
+// becomes a concern we can layer a tiny in-memory cache here.
 
 const CONCURRENCY = 6
 const PER_FILE_LIMIT = 20
@@ -44,9 +33,10 @@ export type TextSearchState = {
 }
 
 export function useTextSearchResults(query: string): TextSearchState {
+    const { client } = useApp()
     const project = useProject()
-    const client = useHCClient()
-    const queryClient = useQueryClient()
+    const fileTree = useFileTreeService()
+    const files = useSignal(fileTree.list)
     const languages = useLanguages()
 
     const [state, setState] = useState<TextSearchState>({
@@ -58,7 +48,6 @@ export function useTextSearchResults(query: string): TextSearchState {
     const abortRef = useRef<AbortController | null>(null)
 
     useEffect(() => {
-        // Always cancel any in-flight scan first; new query supersedes old.
         abortRef.current?.abort()
         if (query.length < MIN_QUERY_LENGTH) {
             setState({ results: [], loading: false, scanned: 0, total: 0 })
@@ -69,9 +58,7 @@ export function useTextSearchResults(query: string): TextSearchState {
         abortRef.current = controller
 
         const languageMimes = listAllLanguageMimes(languages)
-        const textFiles = project.files.filter((f) =>
-            isTextContentType(f.contentType, languageMimes),
-        )
+        const textFiles = files.filter((f) => isTextContentType(f.contentType, languageMimes))
         setState({ results: [], loading: true, scanned: 0, total: textFiles.length })
 
         const results: TextResult[] = []
@@ -83,7 +70,7 @@ export function useTextSearchResults(query: string): TextSearchState {
             if (totalMatches >= TOTAL_LIMIT) return
             let text: string
             try {
-                text = await loadFileText(client, queryClient, project.id, file.path)
+                text = await loadFileText(client, project.projectId, file.path, controller.signal)
             } catch {
                 return
             } finally {
@@ -99,8 +86,6 @@ export function useTextSearchResults(query: string): TextSearchState {
         void (async () => {
             await runWithConcurrency(textFiles, scanFile, CONCURRENCY, controller.signal)
             if (controller.signal.aborted) return
-            // Sort by score desc then by path so deterministic order is stable
-            // across re-renders.
             results.sort((a, b) => b.score - a.score || a.data.path.localeCompare(b.data.path))
             setState({
                 results,
@@ -111,24 +96,18 @@ export function useTextSearchResults(query: string): TextSearchState {
         })()
 
         return () => controller.abort()
-    }, [client, project.files, project.id, query, queryClient, languages])
+    }, [client, files, project.projectId, query, languages])
 
     return state
 }
 
 async function loadFileText(
     client: HCClient,
-    queryClient: ReturnType<typeof useQueryClient>,
     projectId: string,
     path: string,
+    signal: AbortSignal,
 ): Promise<string> {
-    // Reuse the cached bytes if v1MapFilesGet has fetched this file already
-    // (e.g. because the user has it open in an editor tab); otherwise run the
-    // fetch through the query client so the cache picks it up.
-    const data = await queryClient.fetchQuery({
-        queryKey: v1MapFilesGetKey(projectId, path),
-        queryFn: () => v1MapFilesGet(client, projectId, path),
-    })
+    const data = await v1MapFilesGet(client, projectId, path, { signal })
     return new TextDecoder('utf-8', { fatal: false }).decode(data.bytes)
 }
 
@@ -163,14 +142,11 @@ function makeSnippet(
     matchIndex: number,
     matchLength: number,
 ): { snippet: string; matchStart: number; line: number; column: number } {
-    // Walk back to the start of the line, then forward to the end of the
-    // line (or to a window cap).
     const lineStart = lineStartOf(text, matchIndex)
     const lineEnd = lineEndOf(text, matchIndex)
     const left = Math.max(lineStart, matchIndex - SNIPPET_WINDOW)
     const right = Math.min(lineEnd, matchIndex + matchLength + SNIPPET_WINDOW)
     const rawSnippet = text.slice(left, right)
-    // Normalize whitespace to keep one-line snippets.
     const snippet = rawSnippet.replaceAll(/\s+/gu, ' ').trim()
     const localMatch = matchIndex - left
     const trimmedLead = rawSnippet.length - rawSnippet.replace(/^\s+/u, '').length
@@ -193,8 +169,6 @@ function lineEndOf(text: string, index: number): number {
 }
 
 function lineNumberOf(text: string, index: number): number {
-    // 1-based line number. Counting via string split is wasteful for huge
-    // files, so walk explicitly.
     let line = 1
     for (let i = 0; i < index; i++) {
         if (text[i] === '\n') line++

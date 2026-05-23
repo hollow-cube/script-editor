@@ -16,8 +16,8 @@ type PrepareRenameResult =
     | { range: Range; placeholder: string }
     | { defaultBehavior: true }
 
-import { getActiveEditor } from '../../editor/active-editor-registry'
 import { stringTokenAt } from '../../editor/extensions/tokens'
+import { useProject } from '../../model'
 import { useLayout } from '../../model/workspace'
 import { useRegisterAction, type Action, type ActionRunContext } from '../../project/actions'
 import { useProjectServices } from '../../project/services-context'
@@ -35,6 +35,7 @@ export function LspActions() {
     const services = useProjectServices()
     const bus = useLspUiBus()
     const layout = useLayout()
+    const activeEditor = useProject().activeEditor
 
     const resolveContext = useCallback(() => {
         const lsp = services.getLuauLspSnapshot()
@@ -44,10 +45,10 @@ export function LspActions() {
         if (!leafId) return null
         const leaf = findLeaf(state.center, leafId)
         if (!leaf || !leaf.activeId) return null
-        const entry = getActiveEditor(leaf.activeId)
+        const entry = activeEditor.get(leaf.activeId)
         if (!entry || !entry.lspUri) return null
         return { client: lsp.client, uri: entry.lspUri, view: entry.view }
-    }, [services, layout])
+    }, [services, layout, activeEditor])
 
     const runCodeAction = useCallback(
         async (_ctx: ActionRunContext) => {

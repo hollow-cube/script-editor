@@ -18,11 +18,11 @@ import {
 } from 'lucide-react'
 import type { Diagnostic } from 'vscode-languageserver-types'
 
-import { useV1MapFilesGet, useV1MapFilesUpdate, type MapFileBytes } from '@hollowcube/api'
+import { v1MapFilesGet, type MapFileBytes } from '@hollowcube/api'
+import type { ReadonlySignal } from '@preact/signals-core'
 import { Button, cn, Input, Label } from '@hollowcube/design-system'
 
 import { CodeEditor, type CodeEditorApi, type UsageMatch } from '../../editor'
-import { clearActiveEditor, setActiveEditor } from '../../editor/active-editor-registry'
 import {
     useLanguageForMime,
     useLanguageForPath,
@@ -33,12 +33,12 @@ import {
 import { fileUriFromPath } from '../../editor/languages/luau-editor-services'
 import { useEngineApi } from '../../engine-api'
 import { useLuauLsp } from '../../lsp'
+import { useApp, useProject } from '../../model'
+import { usePendingFile } from '../../model/files'
+import { useSignal } from '../../model/foundation/react'
 import { useLayout } from '../../model/workspace'
 import { type Tab } from '../../workspace'
 import { useProjectActions } from '../actions'
-import { useProject } from '../context'
-import { usePendingFile, usePendingFilesStore } from '../data/pending-files'
-import { useDocument, useDocumentStore } from '../documents'
 import { renderFileIcon } from '../file-icons'
 import { type EditorDefinition } from '../registry'
 import { useProjectServices } from '../services-context'
@@ -60,9 +60,26 @@ import { TEXT_EDITOR_KIND } from './text-kind'
 // while the standalone module is the canonical source.
 export { TEXT_EDITOR_KIND }
 
-const AUTOSAVE_DELAY_MS = 800
-
 const EMPTY_EDITOR_SERVICES: EditorServices = {}
+
+// Stable empty signals so `useSignal(...)` has a real signal to subscribe
+// to before the model lands. Both peek to a falsy/empty value and never
+// notify subscribers.
+const EMPTY_STRING_SIGNAL = {
+    get value() {
+        return ''
+    },
+    peek: () => '',
+    subscribe: () => () => {},
+} as unknown as ReadonlySignal<string>
+const EMPTY_BOOL_SIGNAL = {
+    get value() {
+        return false
+    },
+    peek: () => false,
+    subscribe: () => () => {},
+} as unknown as ReadonlySignal<boolean>
+
 const EMPTY_DIAGNOSTIC_COUNTS: DiagnosticCounts = {
     errors: 0,
     warnings: 0,
@@ -163,10 +180,10 @@ export const textEditor: EditorDefinition = {
 
 function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
     const project = useProject()
+    const { client: hcClient } = useApp()
     const layout = useLayout()
-    const documentStore = useDocumentStore()
-    const pendingStore = usePendingFilesStore()
-    const updateMutation = useV1MapFilesUpdate()
+    const textModels = project.textModels
+    const fileTreeFiles = useSignal(project.fileTree.files)
     const services = useProjectServices()
     const { openEditor } = useProjectActions()
     const editorApiRef = useRef<CodeEditorApi | null>(null)
@@ -188,12 +205,36 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
         return `unsaved:${tab.id}`
     }, [effectivePath, payload.tempId, tab.id])
 
-    const fileQuery = useV1MapFilesGet(project.id, effectivePath ?? '', {
-        enabled: isExistingFile,
-        retry: 0,
-    })
-
-    const doc = useDocument(docId)
+    // Fetch the initial bytes for existing files; pending docs start empty.
+    type FetchState =
+        | { kind: 'idle' }
+        | { kind: 'loading' }
+        | { kind: 'loaded'; bytes: MapFileBytes }
+        | { kind: 'error'; error: unknown }
+    const [fileFetch, setFileFetch] = useState<FetchState>(() =>
+        isExistingFile ? { kind: 'loading' } : { kind: 'idle' },
+    )
+    useEffect(() => {
+        if (!isExistingFile || !effectivePath) {
+            setFileFetch({ kind: 'idle' })
+            return
+        }
+        const ac = new AbortController()
+        setFileFetch({ kind: 'loading' })
+        void v1MapFilesGet(hcClient, project.projectId, effectivePath, {
+            signal: ac.signal,
+        }).then(
+            (bytes) => {
+                if (!ac.signal.aborted) setFileFetch({ kind: 'loaded', bytes })
+                return undefined
+            },
+            (error: unknown) => {
+                if (!ac.signal.aborted) setFileFetch({ kind: 'error', error })
+                return undefined
+            },
+        )
+        return () => ac.abort()
+    }, [hcClient, isExistingFile, effectivePath, project.projectId])
 
     // Resolve the language. Prefer the path-based lookup because the server's
     // content-type is often too coarse (text/plain for `.luau` since there's no
@@ -201,14 +242,16 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
     // matching language registered. Pending files have no server content-type,
     // so the path lookup is the only signal.
     const fromPath = useLanguageForPath(effectivePath ?? undefined)
-    const fromMime = useLanguageForMime(fileQuery.data?.contentType)
+    const fromMime = useLanguageForMime(
+        fileFetch.kind === 'loaded' ? fileFetch.bytes.contentType : undefined,
+    )
     const language = fromPath ?? fromMime
 
     // Per-language editor services (LSP extensions, goto-def, diagnostics, ...).
     // The language module owns its LSP wiring; this component just hosts the
     // binding and renders any UI from its snapshot. Languages with no rich
     // services (JSON, plaintext) simply return null below.
-    const knownPaths = useMemo(() => project.files.map((f) => f.path), [project.files])
+    const knownPaths = useMemo(() => [...fileTreeFiles.keys()], [fileTreeFiles])
 
     // Stable accessor for the engine API doc. The bundle resolves once, early;
     // a getter (read via ref) lets the binding see it without being rebuilt.
@@ -221,19 +264,19 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
     )
 
     // Stable callbacks for the binding. `showUsages` derives sourceText from
-    // the current document each invocation — kept here so the language module
-    // doesn't need to reach into the document store.
+    // the current TextModel each invocation — kept here so the language
+    // module doesn't need to reach into the model layer.
     const showUsagesForBinding = useCallback(
         (matches: UsageMatch[], anchorPos: number, sourceRange: { from: number; to: number }) => {
             const api = editorApiRef.current
             if (!api) return
-            const docEntry = documentStore.getState().documents[docId]
-            const sourceText = docEntry
-                ? docEntry.current.slice(sourceRange.from, sourceRange.to) || 'symbol'
+            const model = textModels.get(docId)
+            const sourceText = model
+                ? model.content.peek().slice(sourceRange.from, sourceRange.to) || 'symbol'
                 : 'symbol'
             api.showUsages(sourceText, matches, anchorPos, sourceRange)
         },
-        [docId, documentStore],
+        [docId, textModels],
     )
 
     // Construct the binding once per (language, uri) combination. Disposed on
@@ -283,51 +326,40 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
     const suppressFoldGutter = editorServices.suppressFoldGutter ?? false
     const diagnosticCounts = editorServices.diagnosticCounts ?? EMPTY_DIAGNOSTIC_COUNTS
 
-    // Open / close the document on mount / unmount. The document store
-    // refcounts so multiple tabs of the same file share a single buffer.
+    // Open / close the TextModel on mount / unmount. The service refcounts
+    // so multiple tabs of the same file share a single model.
     const initialContent = useMemo(() => {
-        if (!effectivePath || !fileQuery.data) return ''
-        return decodeText(fileQuery.data)
-    }, [effectivePath, fileQuery.data])
+        if (fileFetch.kind === 'loaded') return decodeText(fileFetch.bytes)
+        return ''
+    }, [fileFetch])
 
     const openedRef = useRef(false)
     useEffect(() => {
         if (openedRef.current) return
-        if (isExistingFile && !fileQuery.data) return
-        documentStore.getState().openDocument(docId, initialContent)
+        if (isExistingFile && fileFetch.kind !== 'loaded') return
+        textModels.getOrOpen(docId, initialContent)
         openedRef.current = true
-    }, [docId, documentStore, isExistingFile, fileQuery.data, initialContent])
+    }, [docId, textModels, isExistingFile, fileFetch.kind, initialContent])
 
     useEffect(() => {
         return () => {
-            if (openedRef.current) documentStore.getState().closeDocument(docId)
+            if (openedRef.current) textModels.close(docId)
             openedRef.current = false
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [docId])
 
-    // If the server pushes a new clean snapshot (event-driven refetch), update
-    // the document's `original` and `current` so the editor sees the new text.
-    // We only do this when the doc is clean — dirty buffers are left alone.
-    useEffect(() => {
-        if (!effectivePath || !fileQuery.data) return
-        const state = documentStore.getState()
-        const current = state.documents[docId]
-        if (!current) return
-        const incoming = decodeText(fileQuery.data)
-        if (current.current === incoming && current.original === incoming) return
-        if (current.dirty) return
-        // Re-open is idempotent on existing docs; we instead set+commit so the
-        // refcount stays stable.
-        state.setContent(docId, incoming)
-        state.commit(docId)
-    }, [docId, documentStore, effectivePath, fileQuery.data])
+    // Subscribe to the model's content for rendering. `useSignal` bridges
+    // the model's `content` ReadonlySignal into React state.
+    const model = textModels.get(docId)
+    const content = useSignal(model ? model.content : EMPTY_STRING_SIGNAL)
+    const dirty = useSignal(model ? model.dirty : EMPTY_BOOL_SIGNAL)
 
     const setContent = useCallback(
         (next: string) => {
-            documentStore.getState().setContent(docId, next)
+            textModels.get(docId)?.setContent(next)
         },
-        [docId, documentStore],
+        [docId, textModels],
     )
 
     // Register the editor view + resolved language + save handler under this
@@ -338,26 +370,27 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
     // entry always sees current state.
     const saveRef = useRef<() => Promise<boolean>>(() => Promise.resolve(true))
     const lspUri = effectivePath ? fileUriFromPath(effectivePath) : undefined
+    const activeEditor = project.activeEditor
     const onViewChange = useCallback(
         (view: EditorView | null) => {
             if (view) {
-                setActiveEditor(tab.id, {
+                activeEditor.register(tab.id, {
                     view,
                     language,
                     save: () => saveRef.current(),
                     lspUri,
                 })
             } else {
-                clearActiveEditor(tab.id)
+                activeEditor.unregister(tab.id)
             }
         },
-        [tab.id, language, lspUri],
+        [activeEditor, tab.id, language, lspUri],
     )
     useEffect(() => {
         return () => {
-            clearActiveEditor(tab.id)
+            activeEditor.unregister(tab.id)
         }
-    }, [tab.id])
+    }, [activeEditor, tab.id])
 
     const [savePromptOpen, setSavePromptOpen] = useState(false)
     const [saveError, setSaveError] = useState<unknown>(null)
@@ -379,76 +412,48 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
     }, [initialScrollToLine, initialFlashLspRange])
 
     // Convert the LSP-coord flash range to document offsets once the
-    // document is loaded. A fresh object identity makes CodeEditor's flash
-    // effect re-fire when the user jumps here again.
+    // document is loaded.
     const flashRange = useMemo(() => {
         if (!initialFlashLspRange) return undefined
-        const text = doc?.current
-        if (text === undefined) return undefined
+        if (!model) return undefined
+        const text = model.content.peek()
         const r = initialFlashLspRange
         const from = lspPosToOffset(text, r.startLine, r.startCharacter)
         const to = lspPosToOffset(text, r.endLine, r.endCharacter)
         if (to <= from) return undefined
         return { from, to }
-        // `doc` (not `doc.current`): the store entry is the reactive value;
-        // `.current` mutates in place without re-rendering. The flash range
-        // only needs (re)computing when the jump target changes or the doc
-        // first loads, which is exactly when `doc`'s identity changes.
-    }, [initialFlashLspRange, doc])
+        // Recompute when the model identity or hint changes — both are the
+        // signals that should re-fire the effect.
+    }, [initialFlashLspRange, model])
 
     const saveAtPath = useCallback(
-        async (path: string) => {
-            const body = documentStore.getState().documents[docId]?.current ?? ''
-            try {
-                await updateMutation.mutateAsync({
-                    mapId: project.id,
-                    path,
-                    body,
-                    contentType: 'text/plain',
-                })
-                const store = documentStore.getState()
-                if (path !== docId) {
-                    // Promote the unsaved document to its real id (the path).
-                    store.openDocument(path, body)
-                    store.commit(path, body)
-                    store.closeDocument(docId, { force: true })
-                } else {
-                    store.commit(docId, body)
-                }
-                if (payload.tempId) pendingStore.getState().remove(payload.tempId)
-                // Patch the tab: drop tempId, point at path.
+        async (path: string): Promise<boolean> => {
+            const result = await textModels.save(docId, { path })
+            if (!result.ok) {
+                setSaveError(result.error.kind === 'network' ? result.error.cause : result.error)
+                return false
+            }
+            // Patch the tab: drop tempId, point at path. TextModelService
+            // already rekeyed the model and removed the pending entry.
+            if (path !== docId) {
                 layout.updateTab(tab.id, {
                     title: basename(path),
                     payload: { path },
                 })
-                setSaveError(null)
-                return true
-            } catch (e) {
-                setSaveError(e)
-                return false
             }
+            setSaveError(null)
+            return true
         },
-        [
-            docId,
-            documentStore,
-            payload.tempId,
-            pendingStore,
-            project.id,
-            tab.id,
-            updateMutation,
-            layout,
-        ],
+        [docId, textModels, tab.id, layout],
     )
 
-    const save = useCallback(async (): Promise<boolean> => {
-        const current = documentStore.getState().documents[docId]
-        if (!current || !current.dirty) return true
-        if (effectivePath) {
-            return await saveAtPath(effectivePath)
-        }
+    const save = useCallback((): Promise<boolean> => {
+        const m = textModels.get(docId)
+        if (!m || !m.dirty.peek()) return Promise.resolve(true)
+        if (effectivePath) return saveAtPath(effectivePath)
         setSavePromptOpen(true)
-        return false
-    }, [docId, documentStore, effectivePath, saveAtPath])
+        return Promise.resolve(false)
+    }, [docId, textModels, effectivePath, saveAtPath])
 
     // Keep the active-editor-registry's save handler in sync with the latest
     // closure. The registered handler reads through this ref so it always
@@ -457,31 +462,25 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
         saveRef.current = save
     }, [save])
 
-    // Debounced autosave for path-bound tabs. Each edit re-runs the effect
-    // (doc identity changes via setContent) and resets the trailing-edge
-    // timer; unmount and discard both cancel via the cleanup. Untitled tabs
-    // skip — they have no path and need the explicit save-as prompt.
-    useEffect(() => {
-        if (!effectivePath || !doc?.dirty) return
-        const timer = setTimeout(() => void save(), AUTOSAVE_DELAY_MS)
-        return () => clearTimeout(timer)
-    }, [effectivePath, doc, save])
+    // Autosave is now driven inside `TextModelService` — one effect per
+    // model, trailing-edge timer. No React effect here.
 
-    if (isExistingFile && fileQuery.isPending) {
+    if (isExistingFile && fileFetch.kind === 'loading') {
         return <Status>Loading {basename(effectivePath ?? '')}…</Status>
     }
-    if (isExistingFile && fileQuery.error) {
-        return <Status tone='error'>Failed to load: {String(fileQuery.error)}</Status>
+    if (isExistingFile && fileFetch.kind === 'error') {
+        return <Status tone='error'>Failed to load: {String(fileFetch.error)}</Status>
     }
-    if (!doc) {
+    if (!model) {
         return <Status>Preparing editor…</Status>
     }
 
+    void dirty
     return (
         <div className='relative flex h-full flex-col'>
             <div className='relative min-h-0 flex-1'>
                 <CodeEditor
-                    value={doc.current}
+                    value={content}
                     onChange={setContent}
                     language={language}
                     extraExtensions={extraExtensions}
@@ -500,7 +499,7 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
                     <DiagnosticIndicator
                         counts={diagnosticCounts}
                         uri={lspUri}
-                        docText={doc.current}
+                        docText={content}
                         apiRef={editorApiRef}
                     />
                 ) : null}

@@ -1,9 +1,9 @@
 import { useEffect, useRef } from 'react'
 
-import { v1MapEditorEvents, useHCClient, type MapEventEnvelope } from '@hollowcube/api'
+import { v1MapEditorEvents, type MapEventEnvelope } from '@hollowcube/api'
 
 import { fileUriFromPath, useLuauLsp } from '../lsp'
-import { useProject } from './context'
+import { useApp, useProject } from '../model'
 
 // Forward project event-stream notifications to the LSP via
 // `workspace/didChangeWatchedFiles`. Each event arrives as a path; we cannot
@@ -20,11 +20,11 @@ import { useProject } from './context'
 // keeps the LSP wiring decoupled from the data layer.
 
 export function LspWatchedFilesBridge() {
-    const client = useHCClient()
+    const { client } = useApp()
     const project = useProject()
     const { client: lspClient, status } = useLuauLsp()
-    const projectIdRef = useRef(project.id)
-    projectIdRef.current = project.id
+    const projectIdRef = useRef(project.projectId)
+    projectIdRef.current = project.projectId
 
     useEffect(() => {
         if (!lspClient || status !== 'running') return

@@ -1,10 +1,10 @@
-// Server-driven `workspace/applyEdit` → document-store mutations.
+// Server-driven `workspace/applyEdit` → `TextModel` mutations.
 //
 // The LSP can hand us text edits across one or many open documents (code
-// actions, rename, executeCommand-produced edits). We apply them by sorting
-// each file's edits in reverse order and splicing the buffer in the
-// DocumentStore. The store's subscription in `LspBufferBridge` then sends
-// `textDocument/didChange` back to the server — we do NOT publish it here.
+// actions, rename, executeCommand-produced edits). We apply them by
+// sorting each file's edits in reverse order and splicing the buffer in
+// the `TextModel`. `LspBufferBridge`'s effect then sends
+// `textDocument/didChange` back to the server — we do NOT publish here.
 //
 // File-op entries in `documentChanges` (CreateFile / RenameFile / DeleteFile)
 // are refused (return `false`) until a filesystem mutation primitive exists.
@@ -14,12 +14,12 @@
 
 import type { Position, TextEdit, WorkspaceEdit } from 'vscode-languageserver-types'
 
-import type { DocumentStore } from '../project/documents/store'
+import type { TextModelService } from '../model/text-models'
 import { flattenWorkspaceEdit } from './LspClient'
 import { pathFromFileUri } from './uriResolver'
 
 export function createApplyWorkspaceEditHandler(
-    documents: DocumentStore,
+    textModels: TextModelService,
 ): (edit: WorkspaceEdit) => boolean {
     return (edit) => {
         if (!edit) return false
@@ -39,12 +39,11 @@ export function createApplyWorkspaceEditHandler(
         const groups = flattenWorkspaceEdit(edit)
         if (groups.length === 0) return true
 
-        const state = documents.getState()
         // Pre-flight: every targeted document must be open. Partial application
         // would desync the server's mirror.
         for (const { uri } of groups) {
             const id = docIdFromUri(uri)
-            if (!state.documents[id]) {
+            if (!textModels.get(id)) {
                 console.warn('[lsp] applyWorkspaceEdit: document not open', uri)
                 return false
             }
@@ -52,11 +51,12 @@ export function createApplyWorkspaceEditHandler(
 
         for (const { uri, edits } of groups) {
             const id = docIdFromUri(uri)
-            const doc = state.documents[id]
-            if (!doc) continue
-            const next = applyTextEdits(doc.current, edits)
-            if (next === doc.current) continue
-            state.setContent(id, next)
+            const model = textModels.get(id)
+            if (!model) continue
+            const current = model.content.peek()
+            const next = applyTextEdits(current, edits)
+            if (next === current) continue
+            model.setContent(next)
         }
         return true
     }

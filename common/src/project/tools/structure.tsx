@@ -18,11 +18,12 @@ import type {
 
 import { cn, ScrollArea } from '@hollowcube/design-system'
 
-import { getActiveEditor } from '../../editor/active-editor-registry'
 import { fileUriFromPath } from '../../editor/languages/luau-editor-services'
 import { useLuauLsp } from '../../lsp'
 import { rangeToOffsets } from '../../lsp/cm/lspUtils'
 import { type LspClient } from '../../lsp/LspClient'
+import { useProject } from '../../model'
+import { type ActiveEditorRegistry } from '../../model/active-editor'
 import { useLayout } from '../../model/workspace'
 import { findLeaf, type Tab, type WorkspaceState } from '../../workspace'
 import { type ToolDefinition } from '../registry'
@@ -90,6 +91,7 @@ function renderBody(
 
 function SymbolTree({ client, focused }: { client: LspClient; focused: FocusedDoc }) {
     const symbols = useDocumentSymbols(client, focused)
+    const activeEditor = useProject().activeEditor
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
     const handleToggle = (id: string) => {
         setCollapsed((prev) => {
@@ -115,7 +117,7 @@ function SymbolTree({ client, focused }: { client: LspClient; focused: FocusedDo
                     path={`${i}`}
                     collapsed={collapsed}
                     onToggle={handleToggle}
-                    onPick={(range) => navigateInFocusedEditor(focused.tabId, range)}
+                    onPick={(range) => navigateInFocusedEditor(activeEditor, focused.tabId, range)}
                 />
             ))}
         </ul>
@@ -269,8 +271,12 @@ function sameFocus(a: FocusedDoc | null, b: FocusedDoc | null): boolean {
     return a.tabId === b.tabId && a.uri === b.uri
 }
 
-function navigateInFocusedEditor(tabId: string, range: LspRange): void {
-    const entry = getActiveEditor(tabId)
+function navigateInFocusedEditor(
+    activeEditor: ActiveEditorRegistry,
+    tabId: string,
+    range: LspRange,
+): void {
+    const entry = activeEditor.get(tabId)
     if (!entry) return
     const { from } = rangeToOffsets(entry.view.state.doc, range)
     entry.view.dispatch({

@@ -1,25 +1,5 @@
 export { EditorApp, type EditorAppDeps, type OpenProjectOpts } from './EditorApp'
 export { Project, type ProjectDeps } from './Project'
-export {
-    WorkspaceLayoutService,
-    findFirstLeaf,
-    findLeaf,
-    makeId,
-    resolveTargetLeaf,
-    selectActiveContextTags,
-    selectTabLocations,
-    useActiveDrag,
-    useCenter,
-    useColumnSizes,
-    useDocksVisible,
-    useFocusedLeafId,
-    useHoveredPaneId,
-    useLayout,
-    useLayoutState,
-    useMiddleSizes,
-    type TabLocation,
-    type WorkspaceLayoutServiceDeps,
-} from './workspace'
 
 export {
     AppProvider,
@@ -50,3 +30,73 @@ export {
 } from './actions'
 
 export { ContextService } from './context'
+
+export {
+    WorkspaceLayoutService,
+    findFirstLeaf,
+    findLeaf,
+    makeId,
+    resolveTargetLeaf,
+    selectActiveContextTags,
+    selectTabLocations,
+    useActiveDrag,
+    useCenter,
+    useColumnSizes,
+    useDocksVisible,
+    useFocusedLeafId,
+    useHoveredPaneId,
+    useLayout,
+    useLayoutState,
+    useMiddleSizes,
+    type TabLocation,
+    type WorkspaceLayoutServiceDeps,
+} from './workspace'
+
+export {
+    ActiveEditorRegistry,
+    useActiveDocId,
+    useActiveEditorEntry,
+    useActiveEditorRegistry,
+    type ActiveEditorEntry,
+} from './active-editor'
+
+export {
+    FileTreeService,
+    PendingFilesService,
+    useFiles,
+    useFileTree,
+    useFileTreeService,
+    usePendingFile,
+    usePendingFiles,
+    usePendingFilesService,
+    type DeleteResult,
+    type FileTreeServiceDeps,
+    type PendingFile,
+    type RenameResult,
+} from './files'
+
+export {
+    ProjectBootstrap,
+    ProjectGate,
+    useBootstrapStatus,
+    useProjectBootstrap,
+    useProjectMetadata,
+    type BootstrapStatus,
+    type ProjectBootstrapDeps,
+} from './bootstrap'
+
+export {
+    TextModelService,
+    createTextModel,
+    useAnyDirty,
+    useTextModel,
+    useTextModelContent,
+    useTextModels,
+    type DocumentId,
+    type SaveError,
+    type SaveResult,
+    type TextModel,
+    type TextModelInternal,
+    type TextModelServiceDeps,
+    type TextModelServiceEvent,
+} from './text-models'

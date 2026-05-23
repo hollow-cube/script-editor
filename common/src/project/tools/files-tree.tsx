@@ -1,7 +1,7 @@
 import { type MapFile } from '@hollowcube/api'
 import { type FileTreeNode } from '@hollowcube/design-system'
 
-import { type PendingFile } from '../data/pending-files'
+import { type PendingFile } from '../../model/files'
 import { renderFileIcon } from '../file-icons'
 
 // Build a hierarchical FileTreeNode list from a flat MapFile array, with

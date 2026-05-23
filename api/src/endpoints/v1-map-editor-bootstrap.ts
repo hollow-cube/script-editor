@@ -1,9 +1,7 @@
-import { queryOptions, useQuery, type UseQueryOptions } from '@tanstack/react-query'
 import { z } from 'zod'
 
 import type { HCClient } from '../client'
 import { mapEditorBootstrapPath } from '../path'
-import { useHCClient } from '../provider'
 
 export const MapFileSchema = z.object({
     path: z.string(),
@@ -28,7 +26,6 @@ export const MapEditorBootstrapSchema = z.object({
 })
 export type MapEditorBootstrap = z.infer<typeof MapEditorBootstrapSchema>
 
-// ---- Endpoint ----
 // One call to initialize the editor: map metadata + the full file listing.
 // Replaces the old GET /projects/{id}. Requires a session (401 unauth, 404
 // unknown map, 403 not the owner).
@@ -36,41 +33,9 @@ export type MapEditorBootstrap = z.infer<typeof MapEditorBootstrapSchema>
 export const v1MapEditorBootstrap = (
     client: HCClient,
     mapId: string,
+    opts?: { signal?: AbortSignal },
 ): Promise<MapEditorBootstrap> =>
     client.request('GET', mapEditorBootstrapPath(mapId), {
         response: MapEditorBootstrapSchema,
+        signal: opts?.signal,
     })
-
-// ---- Query key ----
-// Pass no args for a prefix match (matches all bootstrap queries).
-
-export const v1MapEditorBootstrapKey = (mapId?: string) =>
-    ['v1', 'map', 'editor', 'bootstrap', ...(mapId === undefined ? [] : [mapId])] as const
-
-// ---- Query options ----
-
-export const v1MapEditorBootstrapOptions = (client: HCClient, mapId: string) =>
-    queryOptions({
-        queryKey: v1MapEditorBootstrapKey(mapId),
-        queryFn: () => v1MapEditorBootstrap(client, mapId),
-    })
-
-// ---- Hook ----
-
-export type UseV1MapEditorBootstrapOptions = { client?: HCClient } & Partial<
-    Omit<
-        UseQueryOptions<
-            MapEditorBootstrap,
-            Error,
-            MapEditorBootstrap,
-            ReturnType<typeof v1MapEditorBootstrapKey>
-        >,
-        'queryKey' | 'queryFn'
-    >
->
-
-export const useV1MapEditorBootstrap = (mapId: string, opts?: UseV1MapEditorBootstrapOptions) => {
-    const client = useHCClient(opts?.client)
-    const { client: _client, ...rest } = opts ?? {}
-    return useQuery({ ...v1MapEditorBootstrapOptions(client, mapId), ...rest })
-}

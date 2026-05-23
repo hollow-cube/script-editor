@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { HCClientProvider } from '@hollowcube/api'
 import { TooltipProvider } from '@hollowcube/design-system'
 
-import { useAuth } from '../auth'
 import { LanguageProvider } from '../editor/languages'
 import { EngineApiProvider } from '../engine-api'
 import { LuauLspProvider } from '../lsp'
 import { LspActions, LspUiOverlay, LspUiProvider } from '../lsp/ui'
 import { useApp } from '../model'
+import { ProjectGate } from '../model/bootstrap'
+import { usePendingFilesService } from '../model/files'
 import { ProjectProvider as ModelProjectProvider } from '../model/foundation/react'
 import { useLayout } from '../model/workspace'
 import { makeId, resolveTargetLeaf, Workspace, type DockId } from '../workspace'
@@ -20,14 +20,10 @@ import {
     useProjectActions,
     useRegisterAction,
 } from './actions'
-import { ProjectGate } from './data'
 import { ProjectEventsProvider } from './data/events'
-import { ProjectLoader } from './data/loader'
-import { PendingFilesProvider, usePendingFilesStore } from './data/pending-files'
 import { CloseFocusedTabAction, useTabContextMenu } from './data/tab-actions'
 import { DockAddToolButton } from './DockAddToolButton'
 import { DockEmptyState } from './DockEmptyState'
-import { DocumentStoreProvider } from './documents'
 import { apiTestEditor } from './editors/api-test'
 import { docsEditor } from './editors/docs'
 import { TEXT_EDITOR_KIND, textEditor } from './editors/text'
@@ -55,13 +51,10 @@ const EDITORS: readonly AnyEditorDefinition[] = [
 ]
 
 export function ProjectWorkspace({ projectId }: { projectId: string }) {
-    const { client } = useAuth()
-
     return (
         <ProjectErrorBoundary>
-            <HCClientProvider client={client}>
-                <ProjectLoader
-                    projectId={projectId}
+            <ProjectModelBridge projectId={projectId}>
+                <ProjectGate
                     loading={<StatusScreen tone='muted'>Loading project…</StatusScreen>}
                     errored={(err) => (
                         <StatusScreen tone='error'>
@@ -72,44 +65,35 @@ export function ProjectWorkspace({ projectId }: { projectId: string }) {
                     <RegistryProvider tools={TOOLS} editors={EDITORS}>
                         <EngineApiProvider>
                             <LanguageProvider>
-                                <DocumentStoreProvider>
-                                    <PendingFilesProvider>
-                                        <ProjectEventsProvider projectId={projectId}>
-                                            <ProjectServicesProvider>
-                                                <ServicesActionRegistryAdapter>
-                                                    <TooltipProvider>
-                                                        <ProjectGate>
-                                                            <LuauLspProvider>
-                                                                <LspUiProvider>
-                                                                    <LspBufferBridge />
-                                                                    <LspWatchedFilesBridge />
-                                                                    <ProjectModelBridge
-                                                                        projectId={projectId}
-                                                                    >
-                                                                        <ProjectWorkspaceInner />
-                                                                    </ProjectModelBridge>
-                                                                </LspUiProvider>
-                                                            </LuauLspProvider>
-                                                        </ProjectGate>
-                                                    </TooltipProvider>
-                                                </ServicesActionRegistryAdapter>
-                                            </ProjectServicesProvider>
-                                        </ProjectEventsProvider>
-                                    </PendingFilesProvider>
-                                </DocumentStoreProvider>
+                                <ProjectEventsProvider projectId={projectId}>
+                                    <ProjectServicesProvider>
+                                        <ServicesActionRegistryAdapter>
+                                            <TooltipProvider>
+                                                <LuauLspProvider>
+                                                    <LspUiProvider>
+                                                        <LspBufferBridge />
+                                                        <LspWatchedFilesBridge />
+                                                        <ProjectWorkspaceInner />
+                                                    </LspUiProvider>
+                                                </LuauLspProvider>
+                                            </TooltipProvider>
+                                        </ServicesActionRegistryAdapter>
+                                    </ProjectServicesProvider>
+                                </ProjectEventsProvider>
                             </LanguageProvider>
                         </EngineApiProvider>
                     </RegistryProvider>
-                </ProjectLoader>
-            </HCClientProvider>
+                </ProjectGate>
+            </ProjectModelBridge>
         </ProjectErrorBoundary>
     )
 }
 
 // Phase 2 bridge: constructs the model-layer `Project` once via
 // `app.openProject(projectId, ...)` and exposes it through
-// `<ProjectProvider>` so workspace consumers can reach `useProject().layout`.
-// Phase 6 will collapse this into the page shell.
+// `<ProjectProvider>` so workspace consumers can reach
+// `useProject().layout` / `.fileTree` / `.textModels` / etc. Phase 6 will
+// collapse this into the page shell.
 function ProjectModelBridge({
     projectId,
     children,
@@ -127,8 +111,6 @@ function ProjectModelBridge({
         projectRef.current = project
         forceRender((n) => n + 1)
         return () => {
-            // If the current project on the app is the one we opened,
-            // close it; otherwise a sibling already replaced it.
             if (app.currentProject.peek() === project) {
                 app.closeProject()
             }
@@ -217,11 +199,11 @@ function formatErr(err: unknown): string {
 // Registers Cmd/Ctrl+N → new untitled text file. Reads the focused leaf
 // from `Project.layout` directly so it works for siblings of `<Workspace>`.
 function NewFileAction() {
-    const pendingStore = usePendingFilesStore()
+    const pendingSvc = usePendingFilesService()
     const layout = useLayout()
 
     const handler = useCallback(() => {
-        const tempId = pendingStore.getState().addUntitled()
+        const tempId = pendingSvc.addUntitled()
         const leaf = resolveTargetLeaf(layout.state.peek())
         layout.addTab(
             { kind: 'editor', leafId: leaf.id },
@@ -232,7 +214,7 @@ function NewFileAction() {
                 payload: { tempId },
             },
         )
-    }, [pendingStore, layout])
+    }, [pendingSvc, layout])
 
     const action = useMemo(
         () => ({

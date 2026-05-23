@@ -1,7 +1,7 @@
 import { useEffect, useRef, useSyncExternalStore, type ReactNode } from 'react'
 
 import { useEngineApi } from '../engine-api'
-import { useDocumentStore } from '../project/documents'
+import { useProject } from '../model'
 import { useProjectServices } from '../project/services-context'
 import { createApplyWorkspaceEditHandler } from './applyWorkspaceEdit'
 import { definitionFiles } from './definitionFiles'
@@ -28,7 +28,7 @@ const defaultWorkerFactory = (): Worker =>
  *  Must be mounted inside a `ProjectServicesProvider`. */
 export function LuauLspProvider({ children }: { children: ReactNode }) {
     const services = useProjectServices()
-    const documentStore = useDocumentStore()
+    const { textModels } = useProject()
     const engineApi = useEngineApi()
     const startedRef = useRef(false)
 
@@ -72,7 +72,7 @@ export function LuauLspProvider({ children }: { children: ReactNode }) {
         })
 
         const instance = new LspClient(worker)
-        instance.setApplyWorkspaceEditHandler(createApplyWorkspaceEditHandler(documentStore))
+        instance.setApplyWorkspaceEditHandler(createApplyWorkspaceEditHandler(textModels))
         services.setLuauClient(instance)
 
         const files = docModuleLspFiles()
@@ -107,7 +107,7 @@ export function LuauLspProvider({ children }: { children: ReactNode }) {
             })
             startedRef.current = false
         }
-    }, [documentStore, services, engineApi])
+    }, [textModels, services, engineApi])
 
     return <>{children}</>
 }

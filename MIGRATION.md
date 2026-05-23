@@ -75,7 +75,7 @@ This document is the high-level migration roadmap. Each phase is sized to be a s
 
 ---
 
-### Phase 3 — Project data services + drop TanStack Query [ ]
+### Phase 3 — Project data services + drop TanStack Query [x]
 
 **Goal:** build the services that own project data, and remove TanStack Query in the same cut. These services own their fetching and caching directly.
 
@@ -97,7 +97,7 @@ This document is the high-level migration roadmap. Each phase is sized to be a s
 - New services have full test coverage.
 - `bun run lint:signals` passes (the new services use `.peek()` in methods, `.value` only in reactive contexts).
 
-**Status notes:** _not started_
+**Status notes:** Five new services landed under `common/src/model/`: `ActiveEditorRegistry` (tab-id → CodeMirror view + save handler + lspUri), `PendingFilesService` (signal-backed untitled-file tracking), `FileTreeService` (flat path→MapFile map + sorted list + `rename`/`delete` mutations composing the API), `ProjectBootstrap` (owns the editor-bootstrap fetch as a state machine: idle/loading/loaded/error; kicks off on `Project` construction; sets window title), and `TextModelService` + `TextModel` (canonical doc-spec implementation — single-flight save against captured snapshot, refcounted multi-tab open, autosave via per-model `effect`, external-change handlers, `modelRekeyed`/`saveSucceeded`/`saveFailed`/`conflictAppeared` events). `TanStack Query` removed: `useFoo`/`fooQueryOptions`/`fooKey` hooks stripped from `api/src/endpoints/*` keeping plain `foo(client, args)` + Zod schemas; `<QueryClientProvider>`, `<HCClientProvider>`, `useHCClient`, and `common/src/dev/QueryDevtoolsToggle.tsx` deleted; `@tanstack/react-query` + `@tanstack/react-query-devtools` removed from `api`, `common`, `web`, and `desktop/frontend` package.json + bun.lock. `HCClient` reached via `useApp().client`; service `Deps` carry it. Twelve+ consumers migrated: `files.tsx`, `editors/text.tsx` (full rewrite: autosave + content via signals, no local React effect), `search/sources/{files,text}.ts`, `tools/structure.tsx`, `editors/welcome.tsx`, `ProjectTopBar.tsx`, `actions/{EditorActions,context,project-actions}.ts(x)`, `data/{events,tab-actions}.tsx`, `LspWatchedFilesBridge.tsx`, `LspBufferBridge.tsx` (now `effect()`s over `textModels.openModels` + per-model `content`), `lsp/{applyWorkspaceEdit,LuauLspContext}.tsx`. Deleted: old `common/src/project/{documents/,data/loader.tsx,data/pending-files.tsx,context.tsx}`, plus the orphaned `common/src/editor/active-editor-registry.ts` and `common/src/demo/ApiTestDemo.tsx`. `<ProjectGate>` from the model layer replaces the old `<ProjectLoader>`/`<ProjectGate>` pair. `ProjectWorkspace.tsx` provider tower shrank (lost `<HCClientProvider>`, `<DocumentStoreProvider>`, `<PendingFilesProvider>`, `<ProjectLoader>`). **SSE regression noted**: `<ProjectEventsProvider>` no longer invalidates on events; external file changes won't refresh the tree until Phase 4 wires `ServerEventsConnection` into the model layer. Verification: `bun run lint` (0 errors, 43 unrelated warnings), `bun run typecheck` (clean across all 5 workspaces), `bun run test` (280 pass / 0 fail, 23 files), no `@tanstack/react-query` imports remain, web preview boots cleanly.
 
 ---
 

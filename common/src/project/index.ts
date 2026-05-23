@@ -1,14 +1,6 @@
 export { ProjectWorkspace } from './ProjectWorkspace'
 export { synthesizeProjectName } from './display'
 export {
-    ProjectProvider,
-    ProjectStateProvider,
-    useProject,
-    useProjectState,
-    type Project,
-    type ProjectState,
-} from './context'
-export {
     buildTabRegistry,
     type ToolDefinition,
     type EditorDefinition,
@@ -38,19 +30,7 @@ export {
     type OpenEditorTarget,
     type ProjectActions,
 } from './actions'
-export {
-    DocumentStoreProvider,
-    createDocumentStore,
-    useDocument,
-    useDocumentStore,
-    useDirtyDocuments,
-    selectDirtyDocuments,
-    type Document,
-    type DocumentId,
-    type DocumentStore,
-} from './documents'
 export { AppErrorBoundary, ProjectErrorBoundary, PaneErrorBoundary } from './error-boundary'
-export { ProjectLoader, ProjectGate, HCClientProvider, useHCClient } from './data'
 export { ProjectServices, type LuauLspSnapshot } from './services'
 export {
     ProjectServicesProvider,

@@ -1,8 +1,5 @@
-import { queryOptions, useQuery, type UseQueryOptions } from '@tanstack/react-query'
-
 import type { HCClient } from '../client'
 import { mapFilePath } from '../path'
-import { useHCClient } from '../provider'
 
 export interface MapFileBytes {
     bytes: Uint8Array
@@ -23,7 +20,6 @@ export interface MapFilesGetConditions {
     signal?: AbortSignal
 }
 
-// ---- Endpoint ----
 // Raw file bytes. Sets `ETag: "<hex sha256>"`; honor it with `ifNoneMatch`
 // for caching (304 → notModified, no body).
 
@@ -53,39 +49,4 @@ export const v1MapFilesGet = async (
         contentType: response.headers.get('content-type') ?? 'application/octet-stream',
         etag,
     }
-}
-
-// ---- Query key ----
-
-export const v1MapFilesGetKey = (mapId?: string, path?: string) =>
-    [
-        'v1',
-        'map',
-        'files',
-        'get',
-        ...(mapId === undefined ? [] : [mapId]),
-        ...(path === undefined ? [] : [path]),
-    ] as const
-
-// ---- Query options ----
-
-export const v1MapFilesGetOptions = (client: HCClient, mapId: string, path: string) =>
-    queryOptions({
-        queryKey: v1MapFilesGetKey(mapId, path),
-        queryFn: () => v1MapFilesGet(client, mapId, path),
-    })
-
-// ---- Hook ----
-
-export type UseV1MapFilesGetOptions = { client?: HCClient } & Partial<
-    Omit<
-        UseQueryOptions<MapFileBytes, Error, MapFileBytes, ReturnType<typeof v1MapFilesGetKey>>,
-        'queryKey' | 'queryFn'
-    >
->
-
-export const useV1MapFilesGet = (mapId: string, path: string, opts?: UseV1MapFilesGetOptions) => {
-    const client = useHCClient(opts?.client)
-    const { client: _client, ...rest } = opts ?? {}
-    return useQuery({ ...v1MapFilesGetOptions(client, mapId, path), ...rest })
 }
