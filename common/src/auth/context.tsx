@@ -12,7 +12,6 @@ import {
 import { HCClient, type HCAuthHook } from '@hollowcube/api'
 
 import { usePlatform } from '../platform'
-import { setActiveProjectId } from './active-project'
 import { buildDpopProof } from './dpop'
 import { createWebCryptoKeyStore } from './keystore'
 import { createHashLaunchCodeSource } from './launch-code'
@@ -25,6 +24,11 @@ export interface AuthContextValue {
     status: AuthStatus
     sessions: Session[]
     activeAccount: string | null
+    /** Project id surfaced by the most recent redeem (or null on the resume
+     *  path / dummy auth). Platform shells decide what to do with it — web
+     *  persists it to sessionStorage; desktop ignores it (URL is source of
+     *  truth). */
+    grantedProject: string | null
     /** The HCClient wired with the DPoP auth hook — consumed by the workspace
      *  via <HCClientProvider>. */
     client: HCClient
@@ -52,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const [status, setStatus] = useState<AuthStatus>({ kind: 'initializing' })
     const [sessions, setSessions] = useState<StoredSession[]>([])
     const [activeAccount, setActiveAccount] = useState<string | null>(null)
+    const [grantedProject, setGrantedProject] = useState<string | null>(null)
     const [needsReauth, setNeedsReauth] = useState<ReadonlySet<string>>(new Set())
 
     // Stable, ref-backed so the (memoized) token manager can call the latest
@@ -165,10 +170,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // Dev-only short-circuit: skip the whole launch/redeem/token
             // dance and declare ourselves authenticated. Pairs with the
             // dummy auth hook above and a matching backend auth-disable
-            // flag. Without an override map id there's nothing to open, so
-            // the gate will still show "open from in-game".
+            // flag. Platform shells decide what to render when there's no
+            // project (web: OpenFromGame; desktop: launcher).
             if (platform.devDummyAuth) {
-                setActiveProjectId(platform.devMapIdOverride ?? null)
+                setGrantedProject(null)
                 setActiveAccount('dev-dummy')
                 setStatus({ kind: 'authenticated', account: 'dev-dummy' })
                 return
@@ -195,13 +200,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         outcome.accessToken,
                         outcome.accessExpiresAt,
                     )
-                    // Stash the granted map (per-tab) BEFORE flipping to
-                    // `authenticated` so the gate observes it on the same
-                    // render. `null` → gate shows "open from in-game". A dev
-                    // override beats the granted project so local testing
-                    // can pin a specific map regardless of which launch
-                    // code was used.
-                    setActiveProjectId(platform.devMapIdOverride ?? outcome.project)
+                    // Surface the granted project via context so platform
+                    // shells (web persists it; desktop ignores it) can act.
+                    setGrantedProject(outcome.project)
                     setSessions(await graph.sessionStore.list())
                     setActiveAccount(outcome.session.account)
                     setStatus({ kind: 'authenticated', account: outcome.session.account })
@@ -219,18 +220,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                     return
                 }
             }
-            // On the resume path, apply the dev override so a stored
-            // session opens the override map instead of whatever was
-            // last granted.
-            if (platform.devMapIdOverride) {
-                setActiveProjectId(platform.devMapIdOverride)
-            }
             await resolveFromStore()
         } catch (error) {
             console.error('[auth] init: unexpected error', error)
             setStatus({ kind: 'error', error })
         }
-    }, [graph, resolveFromStore, platform.kind, platform.devDummyAuth, platform.devMapIdOverride])
+    }, [graph, resolveFromStore, platform.kind, platform.devDummyAuth])
 
     // Run once. The ref guard covers the React StrictMode dev double-invoke;
     // the launch-code source strip + redeem in-flight map are the deeper
@@ -301,12 +296,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             status,
             sessions: derived,
             activeAccount,
+            grantedProject,
             client: graph.client,
             redeemFromLaunch: () => void init(),
             switchAccount,
             signOut,
         }
-    }, [status, sessions, needsReauth, activeAccount, graph, init, switchAccount, signOut])
+    }, [
+        status,
+        sessions,
+        needsReauth,
+        activeAccount,
+        grantedProject,
+        graph,
+        init,
+        switchAccount,
+        signOut,
+    ])
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

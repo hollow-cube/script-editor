@@ -7,10 +7,12 @@ export type Path =
   | `/`
   | `/ds`
   | `/editor`
+  | `/launcher`
   | `/playground`
+  | `/project/:projectId`
 
 export type Params = {
-  
+  '/project/:projectId': { projectId: string }
 }
 
 export type ModalPath = never

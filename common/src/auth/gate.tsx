@@ -3,7 +3,6 @@ import { type ReactNode } from 'react'
 import { Button } from '@hollowcube/design-system'
 
 import { usePlatform } from '../platform'
-import { getActiveProjectId } from './active-project'
 import { useAuth } from './context'
 import { IndexedDbUnavailableError } from './idb'
 import { Launcher } from './launcher'
@@ -21,10 +20,11 @@ function formatError(error: unknown): string {
     return String(error)
 }
 
-// Shown both when there is no session at all and when there is a session but
-// no project to open (no fresh grant, grant carried no project, or a stale
-// tab on the resume path). The only way in is a fresh in-game launch.
-function OpenFromGame() {
+// Shown when there is no session at all (web fallback) or when an
+// authenticated session is present but no project context is available
+// (web tab without grant). The only way in is a fresh in-game launch.
+// Desktop replaces this with the launcher window — see desktop/frontend.
+export function OpenFromGame() {
     const platform = usePlatform()
     return (
         <Centered>
@@ -40,10 +40,9 @@ function OpenFromGame() {
     )
 }
 
-// Blocks the workspace until an authenticated session is reachable. Scope is
-// the `/` workspace only — demo/dev routes never mount this. Phase 1 stops at
-// the authenticated state and renders the workspace children; there is no
-// project/file work here.
+// Blocks rendering until an authenticated session is reachable. The
+// project-id check has moved to the page shell — desktop reads the id from
+// the URL, web reads it from sessionStorage and falls back to OpenFromGame.
 export function AuthGate({ children }: { children: ReactNode }) {
     const { status, redeemFromLaunch } = useAuth()
 
@@ -55,11 +54,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         case 'picking':
             return <Launcher />
         case 'authenticated':
-            // An authenticated session alone is not enough — the workspace
-            // needs a project to open. No granted project (resume path, grant
-            // had none) falls back to the launcher screen, never a stale
-            // project.
-            return getActiveProjectId() ? children : <OpenFromGame />
+            return <>{children}</>
         case 'error':
             // IndexedDB-unavailable deterministically re-fails, so "Try
             // again" (re-run redeem) is a dead end — offer a reload after the

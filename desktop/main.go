@@ -6,6 +6,7 @@ import (
 	"log"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/events"
 )
 
 //go:embed all:frontend/dist
@@ -19,25 +20,22 @@ func init() {
 	application.RegisterEvent[SetItemsPayload](MenuSetItemsEvent)
 }
 
-// main function serves as the application's entry point. It initializes the application, creates a window,
-// and starts a goroutine that emits a time-based event every second. It subsequently runs the application and
-// logs any error that might occur.
 func main() {
+	wm := NewWindowManager()
 
-	// Create a new Wails application by providing the necessary options.
-	// Variables 'Name' and 'Description' are for application metadata.
-	// 'Assets' configures the asset server with the 'FS' variable pointing to the frontend files.
-	// 'Bind' is a list of Go struct instances. The frontend has access to the methods of these instances.
-	// 'Mac' options tailor the application when running an macOS.
 	app := application.New(application.Options{
 		Name:        "Hollow Cube",
-		Description: "A demo of using raw HTML & CSS",
-		Services:    []application.Service{},
+		Description: "Hollow Cube editor",
+		Services: []application.Service{
+			application.NewService(wm),
+		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
 		},
 		Mac: application.MacOptions{
-			ApplicationShouldTerminateAfterLastWindowClosed: true,
+			// The launcher reopens itself when the last editor window closes,
+			// so the app should stay alive across window cycles.
+			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
 	})
 
@@ -60,26 +58,19 @@ func main() {
 		})
 	})
 
-	app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title: "Window 1",
-		Mac: application.MacWindow{
-			InvisibleTitleBarHeight: 38,
-			TitleBar: application.MacTitleBar{
-				AppearsTransparent:   true,
-				Hide:                 false,
-				HideTitle:            true,
-				FullSizeContent:      true,
-				UseToolbar:           true,
-				ToolbarStyle:         application.MacToolbarStyleUnifiedCompact,
-				HideToolbarSeparator: false,
-			},
-		},
-		BackgroundColour: application.NewRGB(27, 38, 54),
-		URL:              "/",
+	// macOS: when the user clicks the dock icon with no windows open,
+	// reopen the launcher rather than leaving the app stranded.
+	app.Event.OnApplicationEvent(events.Mac.ApplicationShouldHandleReopen, func(_ *application.ApplicationEvent) {
+		application.InvokeAsync(func() {
+			_ = wm.OpenLauncher()
+		})
 	})
 
-	err := app.Run()
-	if err != nil {
+	if err := wm.OpenLauncher(); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := app.Run(); err != nil {
 		log.Fatal(err)
 	}
 }

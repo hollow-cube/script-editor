@@ -3,7 +3,7 @@ import { useCallback, useMemo } from 'react'
 import { HCClientProvider, useHCClient } from '@hollowcube/api'
 import { TooltipProvider } from '@hollowcube/design-system'
 
-import { AuthGate, getActiveProjectId, useAuth } from '../auth'
+import { useAuth } from '../auth'
 import { LanguageProvider } from '../editor/languages'
 import { EngineApiProvider } from '../engine-api'
 import { LuauLspProvider } from '../lsp'
@@ -52,10 +52,9 @@ import { lspLogTool } from './tools/lsp-log'
 import { problemsTool } from './tools/problems'
 import { structureTool } from './tools/structure'
 
-// The project id comes from the in-game launch grant (stashed per-tab in
-// sessionStorage by the auth layer) — there is no hardcoded project and no
-// `/:projectId` routing in v0. The workspace storage key encodes it so
-// per-project layout state is naturally isolated.
+// The workspace storage key encodes the project id so per-project layout
+// state is naturally isolated. Callers supply the id — web reads it from
+// sessionStorage in its page shell, desktop reads it from the URL.
 const workspaceStorageKey = (projectId: string) => `hc-project:${projectId}`
 
 const TOOLS: readonly ToolDefinition[] = [filesTool, structureTool, problemsTool, lspLogTool]
@@ -66,69 +65,58 @@ const EDITORS: readonly AnyEditorDefinition[] = [
     docsEditor,
 ]
 
-export function ProjectWorkspace() {
+export function ProjectWorkspace({ projectId }: { projectId: string }) {
     // The HCClient is owned by <AuthProvider> (constructed with the DPoP auth
     // hook). The `/v1` prefix is owned by the API client; baseUrl is just the
     // host root — empty on web (Vite proxies same-origin `/v1`), absolute on
     // desktop to bypass the `wails://` scheme handler (WebKit bug 192315).
-    // <AuthGate> blocks this subtree until an authenticated session exists.
+    // This component assumes its caller has already passed an <AuthGate>.
     const { client } = useAuth()
-    // <AuthGate> only renders children once authenticated AND a project id is
-    // present, so inside the gate `projectId` is always a string. The ternary
-    // narrows the type and keeps the projectId-dependent tree from being
-    // constructed when there's nothing to open.
-    const projectId = getActiveProjectId()
 
     return (
-        <AuthGate>
-            {projectId ? (
-                <ProjectErrorBoundary>
-                    <HCClientProvider client={client}>
-                        <ProjectLoader
-                            projectId={projectId}
-                            loading={<StatusScreen tone='muted'>Loading project…</StatusScreen>}
-                            errored={(err) => (
-                                <StatusScreen tone='error'>
-                                    Failed to load project: {formatErr(err)}
-                                </StatusScreen>
-                            )}
-                        >
-                            <RegistryProvider tools={TOOLS} editors={EDITORS}>
-                                <EngineApiProvider>
-                                    <LanguageProvider>
-                                        <DocumentStoreProvider>
-                                            <PendingFilesProvider>
-                                                <ProjectEventsProvider projectId={projectId}>
-                                                    <ProjectServicesProvider>
-                                                        <ServicesActionRegistryAdapter>
-                                                            <TooltipProvider>
-                                                                <ProjectGate>
-                                                                    <LuauLspProvider>
-                                                                        <LspUiProvider>
-                                                                            <LspBufferBridge />
-                                                                            <LspWatchedFilesBridge />
-                                                                            <ProjectWorkspaceInner
-                                                                                projectId={
-                                                                                    projectId
-                                                                                }
-                                                                            />
-                                                                        </LspUiProvider>
-                                                                    </LuauLspProvider>
-                                                                </ProjectGate>
-                                                            </TooltipProvider>
-                                                        </ServicesActionRegistryAdapter>
-                                                    </ProjectServicesProvider>
-                                                </ProjectEventsProvider>
-                                            </PendingFilesProvider>
-                                        </DocumentStoreProvider>
-                                    </LanguageProvider>
-                                </EngineApiProvider>
-                            </RegistryProvider>
-                        </ProjectLoader>
-                    </HCClientProvider>
-                </ProjectErrorBoundary>
-            ) : null}
-        </AuthGate>
+        <ProjectErrorBoundary>
+            <HCClientProvider client={client}>
+                <ProjectLoader
+                    projectId={projectId}
+                    loading={<StatusScreen tone='muted'>Loading project…</StatusScreen>}
+                    errored={(err) => (
+                        <StatusScreen tone='error'>
+                            Failed to load project: {formatErr(err)}
+                        </StatusScreen>
+                    )}
+                >
+                    <RegistryProvider tools={TOOLS} editors={EDITORS}>
+                        <EngineApiProvider>
+                            <LanguageProvider>
+                                <DocumentStoreProvider>
+                                    <PendingFilesProvider>
+                                        <ProjectEventsProvider projectId={projectId}>
+                                            <ProjectServicesProvider>
+                                                <ServicesActionRegistryAdapter>
+                                                    <TooltipProvider>
+                                                        <ProjectGate>
+                                                            <LuauLspProvider>
+                                                                <LspUiProvider>
+                                                                    <LspBufferBridge />
+                                                                    <LspWatchedFilesBridge />
+                                                                    <ProjectWorkspaceInner
+                                                                        projectId={projectId}
+                                                                    />
+                                                                </LspUiProvider>
+                                                            </LuauLspProvider>
+                                                        </ProjectGate>
+                                                    </TooltipProvider>
+                                                </ServicesActionRegistryAdapter>
+                                            </ProjectServicesProvider>
+                                        </ProjectEventsProvider>
+                                    </PendingFilesProvider>
+                                </DocumentStoreProvider>
+                            </LanguageProvider>
+                        </EngineApiProvider>
+                    </RegistryProvider>
+                </ProjectLoader>
+            </HCClientProvider>
+        </ProjectErrorBoundary>
     )
 }
 

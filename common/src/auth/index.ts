@@ -1,5 +1,5 @@
 export { AuthProvider, useAuth, type AuthContextValue } from './context'
-export { AuthGate } from './gate'
+export { AuthGate, OpenFromGame } from './gate'
 export { Launcher } from './launcher'
 export { createHashLaunchCodeSource } from './launch-code'
 export { createWebCryptoKeyStore } from './keystore'
