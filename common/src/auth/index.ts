@@ -1,4 +1,4 @@
-export { AuthProvider, useAuth, type AuthContextValue } from './context'
+export { useAuth, type AuthContextValue } from '../model/auth/react'
 export { AuthGate, OpenFromGame } from './gate'
 export { Launcher } from './launcher'
 export { createHashLaunchCodeSource } from './launch-code'

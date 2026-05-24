@@ -1,5 +1,6 @@
 export { EditorApp, type EditorAppDeps, type OpenProjectOpts } from './EditorApp'
 export { Project, type ProjectDeps } from './Project'
+export { AuthService, useAuth, type AuthContextValue, type AuthServiceDeps } from './auth'
 
 export {
     AppProvider,

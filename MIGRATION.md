@@ -124,7 +124,7 @@ This document is the high-level migration roadmap. Each phase is sized to be a s
 
 ---
 
-### Phase 5 — Auth migration [ ]
+### Phase 5 — Auth migration [x]
 
 **Goal:** lift `AuthProvider` into an `AuthService` class. Deferred to here because auth already works and is mostly factored out (`TokenManager`, `createIndexedDbSessionStore`, `redeemLaunchCode` are plain TS); the React wrapping is contained.
 
@@ -140,7 +140,7 @@ This document is the high-level migration roadmap. Each phase is sized to be a s
 - The 318-line `context.tsx` shrinks to ~50 lines (bridge + provider).
 - Auth tests pass.
 
-**Status notes:** _not started_
+**Status notes:** `AuthService` landed at `common/src/model/auth/AuthService.ts` — wraps the existing plain-TS `tokens.ts` / `dpop.ts` / `redeem.ts` / `sessionstore.ts` / `keystore.ts` / `launch-code.ts` modules verbatim, just shifting state from React `useState` to signals. Owns `client: HCClient` (constructed inside the service with the DPoP/auth interceptors), the FSM (`status: ReadonlySignal<AuthStatus>`), `sessions` (computed: stored + needsReauth → state field), `activeAccount`, `grantedProject`, plus `init()` / `redeemFromLaunch()` / `switchAccount()` / `signOut()` / `dispose()`. Init fires in the constructor; state-machine guard + redeem.ts's module-level in-flight map cover React StrictMode. `EditorApp({ platform })` — `client` becomes a getter returning `auth.client`. `<AuthProvider>` deleted; `useAuth()` is now a thin hook in `common/src/model/auth/react.ts` that reads from `useApp().auth` via `useSignal` and preserves the existing 8-field shape. `app-root.tsx` shrinks from ~88 to ~67 lines; `AppBridge` is the only model-layer wrapper. Consumers (`AuthGate`, `Launcher`, web/desktop page shells, `AppBridge`) re-pointed to `useAuth()` from the model layer with no signature changes. Verification: `bun run lint` (0 errors, 45 unrelated warnings; `lint:signals` clean), `bun run typecheck` (clean across all 5 workspaces), `bun run test` (328 pass / 0 fail across 29 files; +12 new `AuthService.test.ts` cases covering dev-dummy short-circuit, redeem success, redeem failure paths, resume-from-store, switchAccount mint/needs-reauth, signOut all/one, disposal). Web preview boots cleanly under dummy-auth mode — auth state reaches `authenticated`, `ProjectGate` opens, and the bootstrap-fetch error path remains the only visible regression vs. having a real local API.
 
 ---
 

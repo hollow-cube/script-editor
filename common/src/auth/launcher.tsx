@@ -2,7 +2,7 @@ import { LogOutIcon } from 'lucide-react'
 
 import { Button } from '@hollowcube/design-system'
 
-import { useAuth } from './context'
+import { useAuth } from '../model/auth/react'
 
 function initials(label: string): string {
     const parts = label.trim().split(/\s+/u)

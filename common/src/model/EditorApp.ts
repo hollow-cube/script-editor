@@ -1,26 +1,20 @@
 // `EditorApp` — the process-wide root container.
 //
-// Phase 1 holds `platform`, `client`, and the currently-open `Project`.
-// Phase 5 will lift `AuthService` onto this class (today the React-side
-// `<AuthProvider>` still owns auth state and produces the `HCClient`; a
-// short-lived bridge in `app-root.tsx` constructs `EditorApp` once auth
-// has minted a client).
-//
-// `openProject(id)` disposes any previously-open project so callers don't
-// have to coordinate cleanup. `closeProject()` is symmetric. The current
-// project is exposed as a signal so reactive consumers (Phase 6 page
-// shells) can observe project switches.
+// Owns `platform`, `auth` (Phase 5: `AuthService`), and the currently-
+// open `Project`. The wired `HCClient` lives inside `AuthService`; the
+// `client` getter returns `this.auth.client` so existing consumers
+// (`Project` deps, model services) keep working unchanged.
 
 import type { HCClient } from '@hollowcube/api'
 
 import type { Platform } from '../platform'
 import type { WorkspaceState } from '../workspace/types'
+import { AuthService } from './auth/AuthService'
 import { signal, type ReadonlySignal } from './foundation/signal'
 import { Project } from './Project'
 
 export interface EditorAppDeps {
     platform: Platform
-    client: HCClient
 }
 
 export interface OpenProjectOpts {
@@ -30,14 +24,21 @@ export interface OpenProjectOpts {
 
 export class EditorApp {
     readonly platform: Platform
-    readonly client: HCClient
+    readonly auth: AuthService
 
     private readonly _currentProject = signal<Project | null>(null)
     readonly currentProject: ReadonlySignal<Project | null> = this._currentProject
 
+    /** The auth-wired HCClient. Sourced from `AuthService` so the same
+     *  client instance flows everywhere — DPoP, token refresh, the
+     *  whole graph stays consistent. */
+    get client(): HCClient {
+        return this.auth.client
+    }
+
     constructor(deps: EditorAppDeps) {
         this.platform = deps.platform
-        this.client = deps.client
+        this.auth = new AuthService({ platform: deps.platform })
     }
 
     openProject(projectId: string, opts: OpenProjectOpts): Project {
@@ -65,5 +66,6 @@ export class EditorApp {
 
     dispose(): void {
         this.closeProject()
+        this.auth.dispose()
     }
 }

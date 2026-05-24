@@ -1,7 +1,6 @@
 import { StrictMode, useEffect, useRef, useState, type ReactNode } from 'react'
 import { HotkeysProvider } from '@tanstack/react-hotkeys'
 
-import { AuthProvider, useAuth } from './auth'
 import { AppProvider, EditorApp } from './model'
 import { PlatformProvider, usePlatform, type Platform } from './platform'
 import { AppErrorBoundary } from './project'
@@ -32,36 +31,33 @@ export function AppRoot({ platform, children }: AppRootProps) {
         <StrictMode>
             <AppErrorBoundary>
                 <PlatformProvider platform={platform}>
-                    <AuthProvider>
-                        <AppBridge>
-                            <HotkeysProvider>{children}</HotkeysProvider>
-                        </AppBridge>
-                    </AuthProvider>
+                    <AppBridge>
+                        <HotkeysProvider>{children}</HotkeysProvider>
+                    </AppBridge>
                 </PlatformProvider>
             </AppErrorBoundary>
         </StrictMode>
     )
 }
 
-// Phase 1 of the model migration: construct the `EditorApp` once auth has
-// produced an HCClient and expose it via `<AppProvider>`. Phase 5 will
-// collapse this bridge: AppProvider moves above AuthProvider and
-// AuthService is lifted onto EditorApp.
+// Constructs the `EditorApp` (which builds the `AuthService` internally)
+// once per platform identity and exposes it via `<AppProvider>`. The
+// auth state machine + HCClient + DPoP plumbing live inside the service
+// — there's no separate `<AuthProvider>` in the tree.
 function AppBridge({ children }: { children: ReactNode }) {
     const platform = usePlatform()
-    const { client } = useAuth()
     const appRef = useRef<EditorApp | null>(null)
     const [, forceRender] = useState(0)
 
     useEffect(() => {
-        const app = new EditorApp({ platform, client })
+        const app = new EditorApp({ platform })
         appRef.current = app
         forceRender((n) => n + 1)
         return () => {
             app.dispose()
             if (appRef.current === app) appRef.current = null
         }
-    }, [platform, client])
+    }, [platform])
 
     const app = appRef.current
     if (!app) return null
