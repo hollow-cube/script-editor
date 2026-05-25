@@ -42,6 +42,7 @@ import {
     useLuauLsp,
     useProject,
 } from '../../model'
+import { useNotificationService } from '../../model/notifications'
 import { usePendingFile } from '../../model/files'
 import { useSignal } from '../../model/foundation/react'
 import { useLayout } from '../../model/workspace'
@@ -423,19 +424,27 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
         }
     }, [activeEditor, tab.id])
 
-    // Surface save failures for this docId as an inline banner. The
-    // service still fires saveSucceeded events too — we clear the
-    // banner on those.
-    const [saveError, setSaveError] = useState<unknown>(null)
+    // Surface save failures for this docId as toasts via the notification
+    // service. Errors are sticky (NotificationService.error defaults to no
+    // auto-dismiss); the user dismisses or the next save success clears it.
+    const notifications = useNotificationService()
+    const saveErrorIdRef = useRef<string | null>(null)
     useEffect(() => {
         return textModels.events((evt) => {
             if (evt.kind === 'saveFailed' && evt.docId === docId) {
-                setSaveError(evt.error.kind === 'network' ? evt.error.cause : evt.error)
+                if (saveErrorIdRef.current) notifications.dismiss(saveErrorIdRef.current)
+                const cause = evt.error.kind === 'network' ? evt.error.cause : evt.error
+                saveErrorIdRef.current = notifications.error('Save failed', {
+                    caption: formatError(cause),
+                })
             } else if (evt.kind === 'saveSucceeded' && evt.docId === docId) {
-                setSaveError(null)
+                if (saveErrorIdRef.current) {
+                    notifications.dismiss(saveErrorIdRef.current)
+                    saveErrorIdRef.current = null
+                }
             }
         })
-    }, [docId, textModels])
+    }, [docId, notifications, textModels])
 
     // Honor scrollToLine + flashLspRange on first mount of the tab — once
     // we've taken the hint, scrub them from the persisted payload so
@@ -509,11 +518,6 @@ function TextTab({ tab, payload }: { tab: Tab; payload: TextEditorPayload }) {
                     />
                 ) : null}
             </div>
-            {saveError ? (
-                <div className='border-destructive/40 bg-destructive/10 text-destructive m-2 rounded-sm border px-2 py-1 text-xs'>
-                    Save failed: {formatError(saveError)}
-                </div>
-            ) : null}
         </div>
     )
 }

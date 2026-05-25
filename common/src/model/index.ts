@@ -45,6 +45,15 @@ export {
 } from './navigation'
 
 export {
+    NotificationService,
+    useNotifications,
+    useNotificationService,
+    type Notification,
+    type NotificationLevel,
+    type NotifyArgs,
+} from './notifications'
+
+export {
     WorkspaceLayoutService,
     findFirstLeaf,
     findLeaf,

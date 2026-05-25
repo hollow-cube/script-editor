@@ -28,6 +28,7 @@ import { LanguageService } from './languages/LanguageService'
 import { LspService } from './lsp/LspService'
 import { NavigationService } from './navigation/NavigationService'
 import type { AnyEditorMetadata, ToolMetadata } from './navigation/types'
+import { NotificationService } from './notifications/NotificationService'
 import { SearchService } from './search/SearchService'
 import { TextModelService } from './text-models/TextModelService'
 import { findLeaf } from './workspace/tree-helpers'
@@ -77,6 +78,7 @@ export class Project {
     readonly lsp: LspService
     readonly events: ServerEventsConnection
     readonly navigation: NavigationService
+    readonly notifications: NotificationService
     private readonly _toolKinds: readonly string[]
     private readonly _stopLspBundleEffect: () => void
     private readonly _stopTextModelGC: () => void
@@ -91,6 +93,7 @@ export class Project {
         this.context = new ContextService()
         this.actions = new ActionRegistry({ context: this.context })
         this.dialogs = new DialogService()
+        this.notifications = new NotificationService()
 
         // One-shot static keys. `platform.desktop` gates desktop-only
         // actions (e.g. `editor.closeFocusedTab`).
@@ -209,6 +212,7 @@ export class Project {
         this.navigation.dispose()
         this.activeEditor.dispose()
         this.layout.dispose()
+        this.notifications.dispose()
         this.dialogs.dispose()
         this.actions.dispose()
         this.context.dispose()

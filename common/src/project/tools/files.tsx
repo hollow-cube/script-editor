@@ -11,6 +11,7 @@ import {
     usePendingFilesService,
 } from '../../model/files'
 import { useSignal } from '../../model/foundation/react'
+import { useNotificationService } from '../../model/notifications'
 import { ActionContextMenu, useProjectActions } from '../actions'
 import { type ContextMenuAction } from '../actions/ActionContextMenu'
 import { TEXT_EDITOR_KIND } from '../editors/text'
@@ -44,13 +45,13 @@ function FilesPane() {
     const pending = usePendingFiles()
     const fileOps = useFileOperations()
     const { openEditor } = useProjectActions()
+    const notifications = useNotificationService()
     const languageSvc = useLanguageService()
     const languageMimes = useMemo(() => languageSvc.allMimes(), [languageSvc])
     const errorPaths = useDiagnosticPaths()
 
     const [ctx, setCtx] = useState<CtxMenuState>({ open: false })
     const [newFile, setNewFile] = useState<NewFileTarget>(null)
-    const [openError, setOpenError] = useState<string | null>(null)
     const [selectedId, setSelectedId] = useState<string | null>(null)
     const [renameTarget, setRenameTarget] = useState<string | null>(null)
 
@@ -82,20 +83,26 @@ function FilesPane() {
             if (result.ok) return
             switch (result.error.kind) {
                 case 'exists':
-                    setOpenError(`${newPath}: already exists`)
+                    notifications.error(`${newPath}: already exists`)
                     return
                 case 'read':
-                    setOpenError(`${sourceId}: failed to read (${formatErr(result.error.cause)})`)
+                    notifications.error(`${sourceId}: failed to read`, {
+                        caption: formatErr(result.error.cause),
+                    })
                     return
                 case 'write':
-                    setOpenError(`${newPath}: write failed (${formatErr(result.error.cause)})`)
+                    notifications.error(`${newPath}: write failed`, {
+                        caption: formatErr(result.error.cause),
+                    })
                     return
                 case 'unknown':
-                    setOpenError(`${sourceId}: failed (${formatErr(result.error.cause)})`)
+                    notifications.error(`${sourceId}: failed`, {
+                        caption: formatErr(result.error.cause),
+                    })
                     return
             }
         },
-        [fileOps],
+        [fileOps, notifications],
     )
 
     const handleCommitRename = useCallback(
@@ -169,13 +176,6 @@ function FilesPane() {
         errorPaths,
     ])
 
-    // Dismiss the inline "cannot open binary" message after a moment.
-    useEffect(() => {
-        if (!openError) return
-        const id = window.setTimeout(() => setOpenError(null), 2400)
-        return () => window.clearTimeout(id)
-    }, [openError])
-
     const openNode = useCallback(
         (id: string, node: FileTreeNode) => {
             if (node.type === 'placeholder') return
@@ -194,7 +194,10 @@ function FilesPane() {
             const file = filesByPath.get(id)
             if (!file) return
             if (!isTextContentType(file.contentType, languageMimes)) {
-                setOpenError(`${file.path}: cannot open ${file.contentType} files`)
+                notifications.warning(`Can't open ${file.path}`, {
+                    caption: `Unsupported content type: ${file.contentType}`,
+                    autoDismissMs: 2400,
+                })
                 return
             }
             // Open by editor `kind` directly, not by mime — the text editor
@@ -207,7 +210,7 @@ function FilesPane() {
                 title: node.name,
             })
         },
-        [filesByPath, openEditor, languageMimes],
+        [filesByPath, openEditor, languageMimes, notifications],
     )
 
     const handleMoveNode = useCallback(
@@ -307,11 +310,6 @@ function FilesPane() {
                     )}
                 </div>
             </ScrollArea>
-            {openError ? (
-                <div className='bg-muted/40 text-muted-foreground border-t border-border px-3 py-1.5 text-xs'>
-                    {openError}
-                </div>
-            ) : null}
             {ctx.open ? (
                 <ActionContextMenu
                     open={ctx.open}

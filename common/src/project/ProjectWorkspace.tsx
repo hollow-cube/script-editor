@@ -14,6 +14,7 @@ import { DialogOverlay } from './DialogOverlay'
 import { DockAddToolButton } from './DockAddToolButton'
 import { DockEmptyState } from './DockEmptyState'
 import { EditorFocusBridge } from './EditorFocusBridge'
+import { NotificationsOverlay } from './NotificationsOverlay'
 import { apiTestEditor } from './editors/api-test'
 import { docsEditor } from './editors/docs'
 import { textEditor } from './editors/text'
@@ -160,6 +161,7 @@ function ProjectWorkspaceInner() {
             <SearchPopup />
             <LspUiOverlay />
             <DialogOverlay />
+            <NotificationsOverlay />
         </div>
     )
 }
