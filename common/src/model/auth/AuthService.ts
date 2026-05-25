@@ -47,12 +47,12 @@ export class AuthService {
     private readonly _status: Signal<AuthStatus> = signal<AuthStatus>({ kind: 'initializing' })
     private readonly _storedSessions: Signal<readonly StoredSession[]> = signal([])
     private readonly _activeAccount: Signal<string | null> = signal(null)
-    private readonly _grantedProject: Signal<string | null> = signal(null)
+    private readonly _grantedMapId: Signal<string | null> = signal(null)
     private readonly _needsReauth: Signal<ReadonlySet<string>> = signal(new Set())
 
     readonly status: ReadonlySignal<AuthStatus> = this._status
     readonly activeAccount: ReadonlySignal<string | null> = this._activeAccount
-    readonly grantedProject: ReadonlySignal<string | null> = this._grantedProject
+    readonly grantedMapId: ReadonlySignal<string | null> = this._grantedMapId
 
     /** Sessions decorated with runtime `state: 'active' | 'needs-reauth'`. */
     readonly sessions: ReadonlySignal<readonly Session[]> = computed(() => {
@@ -144,7 +144,7 @@ export class AuthService {
             this._status.value = { kind: 'initializing' }
 
             if (this._platform.devDummyAuth) {
-                this._grantedProject.value = null
+                this._grantedMapId.value = null
                 this._activeAccount.value = 'dev-dummy'
                 this._status.value = { kind: 'authenticated', account: 'dev-dummy' }
                 return
@@ -171,7 +171,7 @@ export class AuthService {
                         outcome.accessToken,
                         outcome.accessExpiresAt,
                     )
-                    this._grantedProject.value = outcome.project
+                    this._grantedMapId.value = outcome.mapId
                     this._storedSessions.value = await this._sessionStore.list()
                     this._activeAccount.value = outcome.session.account
                     this._status.value = {

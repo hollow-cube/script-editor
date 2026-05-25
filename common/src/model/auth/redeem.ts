@@ -10,10 +10,10 @@ export type RedeemOutcome =
           session: StoredSession
           accessToken: string
           accessExpiresAt: string
-          /** Project the launch grant opened from in-game. `null` when the
-           *  grant carried no project — the caller renders the
-           *  "open from in-game" screen rather than a stale project. */
-          project: string | null
+          /** Map id the launch grant opened from in-game. `null` when the
+           *  grant carried no map — the caller renders the
+           *  "open from in-game" screen rather than a stale map. */
+          mapId: string | null
       }
     | { status: 'error'; error: unknown }
 
@@ -59,7 +59,7 @@ async function doRedeem(code: string, deps: RedeemDeps): Promise<RedeemOutcome> 
             session,
             accessToken: res.accessToken,
             accessExpiresAt: res.accessExpiresAt,
-            project: res.project ?? null,
+            mapId: res.mapId ?? null,
         }
     } catch (err) {
         // Redeem failure is a generic 401 (bad proof OR expired/used code) —

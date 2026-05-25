@@ -72,7 +72,7 @@ const REDEEM_OK = {
     accessExpiresAt: '2099-01-01T00:00:00Z',
     sessionId: 'sess-1',
     account: { id: 'acct-1', username: 'bob' },
-    project: 'project-1',
+    mapId: 'map-1',
 }
 
 // --- tests ---
@@ -104,13 +104,13 @@ describe('AuthService — dev-dummy short-circuit', () => {
         await settle(svc)
         expect(svc.status.peek()).toEqual({ kind: 'authenticated', account: 'dev-dummy' })
         expect(svc.activeAccount.peek()).toBe('dev-dummy')
-        expect(svc.grantedProject.peek()).toBeNull()
+        expect(svc.grantedMapId.peek()).toBeNull()
         svc.dispose()
     })
 })
 
 describe('AuthService — successful redeem', () => {
-    test('init redeems the launch code, persists session, sets granted project', async () => {
+    test('init redeems the launch code, persists session, sets granted map id', async () => {
         const sessionStore = createMemorySessionStore()
         const launchSource = makeLaunchSource('CODE-1')
         const { factory } = makeClientFactory((method, path) => {
@@ -130,7 +130,7 @@ describe('AuthService — successful redeem', () => {
             throw new Error(`expected authenticated, got ${status.kind}`)
         expect(status.account).toBe('acct-1')
         expect(svc.activeAccount.peek()).toBe('acct-1')
-        expect(svc.grantedProject.peek()).toBe('project-1')
+        expect(svc.grantedMapId.peek()).toBe('map-1')
         const sessions = svc.sessions.peek()
         expect(sessions).toHaveLength(1)
         expect(sessions[0]!.account).toBe('acct-1')
@@ -218,7 +218,7 @@ describe('AuthService — resume from store (no launch code)', () => {
         const status = svc.status.peek()
         if (status.kind !== 'authenticated') throw new Error(`got ${status.kind}`)
         expect(status.account).toBe('acct-single')
-        expect(svc.grantedProject.peek()).toBeNull()
+        expect(svc.grantedMapId.peek()).toBeNull()
         svc.dispose()
     })
 

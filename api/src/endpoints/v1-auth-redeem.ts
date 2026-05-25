@@ -25,7 +25,7 @@ export const V1AuthRedeemResponseSchema = z.object({
     accessExpiresAt: z.string(),
     sessionId: z.string(),
     account: AccountMetaSchema,
-    project: z.string().optional(),
+    mapId: z.string().optional(),
 })
 export type V1AuthRedeemResponse = z.infer<typeof V1AuthRedeemResponseSchema>
 
