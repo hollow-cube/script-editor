@@ -14,12 +14,11 @@ export {
     type ContextMenuAction,
 } from './ActionContextMenu'
 
-// Host-level project actions (open editor, open tool). Different concept
-// from the registry: these are layout-orchestration helpers, not
-// registered commands.
+// Host-level project actions (open editor, open tool). These are thin
+// React wrappers over `workspace.openEditor` / `workspace.openTool` in
+// the model action registry.
 export {
     useProjectActions,
-    useProjectActionsForLayout,
     type OpenEditorArgs,
     type OpenEditorTarget,
     type ProjectActions,

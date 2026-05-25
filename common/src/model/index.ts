@@ -33,6 +33,17 @@ export {
 export { ContextService } from './context'
 
 export {
+    NavigationService,
+    type AnyEditorMetadata,
+    type EditorMetadata,
+    type NavigationServiceDeps,
+    type OpenEditorArgs,
+    type OpenEditorTarget,
+    type OpenToolArgs,
+    type ToolMetadata,
+} from './navigation'
+
+export {
     WorkspaceLayoutService,
     findFirstLeaf,
     findLeaf,
@@ -121,12 +132,7 @@ export {
     type EngineApiStatus,
 } from './engine-api'
 
-export {
-    SearchService,
-    useSearchService,
-    useSearchSources,
-    type SearchSource,
-} from './search'
+export { SearchService, useSearchService, useSearchSources, type SearchSource } from './search'
 
 export {
     LspService,

@@ -20,7 +20,7 @@ import {
 
 import { useLanguageService, useProject, useSearchSources, useSignal } from '../../model'
 import { useLayout, type WorkspaceLayoutService } from '../../model/workspace'
-import { useProjectActionsForLayout } from '../actions/project-actions'
+import { useProjectActions } from '../actions/project-actions'
 import { DOCS_EDITOR_KIND } from '../editors/docs-kind'
 import { isTextContentType } from '../tools/files-tree'
 import { useActionResults } from './sources/actions'
@@ -451,9 +451,9 @@ function useActiveResult(items: readonly SearchResult[]) {
     return [current, setActive] as const
 }
 
-function useInvoke(close: () => void, layout: WorkspaceLayoutService) {
+function useInvoke(close: () => void, _layout: WorkspaceLayoutService) {
     const actions = useProject().actions
-    const { openEditor } = useProjectActionsForLayout(layout)
+    const { openEditor } = useProjectActions()
     const languageSvc = useLanguageService()
     const languageMimes = useMemo(() => languageSvc.allMimes(), [languageSvc])
     return useCallback(

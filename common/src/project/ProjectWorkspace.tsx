@@ -12,11 +12,11 @@ import { useDoubleTapKey } from './actions/double-tap'
 import { useTabContextMenu } from './data/tab-actions'
 import { DockAddToolButton } from './DockAddToolButton'
 import { DockEmptyState } from './DockEmptyState'
+import { EditorFocusBridge } from './EditorFocusBridge'
 import { apiTestEditor } from './editors/api-test'
 import { docsEditor } from './editors/docs'
 import { textEditor } from './editors/text'
 import { welcomeEditor } from './editors/welcome'
-import { EditorFocusBridge } from './EditorFocusBridge'
 import { ProjectErrorBoundary } from './error-boundary'
 import { createInitialWorkspaceState } from './initial-state'
 import { LspBufferBridge } from './LspBufferBridge'
@@ -76,11 +76,35 @@ function ProjectModelBridge({
 }) {
     const app = useApp()
     const initialLayout = useMemo(() => createInitialWorkspaceState(), [])
+    const toolMetadata = useMemo(
+        () =>
+            TOOLS.map((t) => ({
+                kind: t.kind,
+                title: t.title,
+                defaultLocation: t.defaultLocation,
+            })),
+        [],
+    )
+    const editorMetadata = useMemo(
+        () =>
+            EDITORS.map((e) => ({
+                kind: e.kind,
+                mimeTypes: e.mimeTypes,
+                singleton: e.singleton,
+                parsePayload: e.parsePayload,
+                titleFor: e.titleFor,
+            })),
+        [],
+    )
     const projectRef = useRef<ReturnType<typeof app.openProject> | null>(null)
     const [, forceRender] = useState(0)
 
     useEffect(() => {
-        const project = app.openProject(projectId, { initialLayout })
+        const project = app.openProject(projectId, {
+            initialLayout,
+            tools: toolMetadata,
+            editors: editorMetadata,
+        })
         projectRef.current = project
         forceRender((n) => n + 1)
         return () => {
@@ -89,7 +113,7 @@ function ProjectModelBridge({
             }
             if (projectRef.current === project) projectRef.current = null
         }
-    }, [app, projectId, initialLayout])
+    }, [app, projectId, initialLayout, toolMetadata, editorMetadata])
 
     const project = projectRef.current
     if (!project) return null

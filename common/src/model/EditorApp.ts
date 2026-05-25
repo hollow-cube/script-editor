@@ -11,6 +11,7 @@ import type { Platform } from '../platform'
 import type { WorkspaceState } from '../workspace/types'
 import { AuthService } from './auth/AuthService'
 import { signal, type ReadonlySignal } from './foundation/signal'
+import type { AnyEditorMetadata, ToolMetadata } from './navigation/types'
 import { Project } from './Project'
 
 export interface EditorAppDeps {
@@ -20,6 +21,10 @@ export interface EditorAppDeps {
 export interface OpenProjectOpts {
     /** Initial workspace layout used when no persisted blob exists. */
     initialLayout: WorkspaceState
+    /** Tool metadata for workspace.openTool. */
+    tools: readonly ToolMetadata[]
+    /** Editor metadata for workspace.openEditor. */
+    editors: readonly AnyEditorMetadata[]
 }
 
 export class EditorApp {
@@ -52,6 +57,8 @@ export class EditorApp {
             platform: this.platform,
             client: this.client,
             initialLayout: opts.initialLayout,
+            tools: opts.tools,
+            editors: opts.editors,
         })
         this._currentProject.value = next
         return next

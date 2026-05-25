@@ -24,6 +24,8 @@ import { PendingFilesService } from './files/PendingFilesService'
 import { effect } from './foundation/signal'
 import { LanguageService } from './languages/LanguageService'
 import { LspService } from './lsp/LspService'
+import { NavigationService } from './navigation/NavigationService'
+import type { AnyEditorMetadata, ToolMetadata } from './navigation/types'
 import { SearchService } from './search/SearchService'
 import { TextModelService } from './text-models/TextModelService'
 import { findLeaf } from './workspace/tree-helpers'
@@ -52,6 +54,12 @@ export interface ProjectDeps {
      *  failed to load / failed validation). The caller owns the initial
      *  shape because tools and editors are registered host-side. */
     initialLayout: WorkspaceState
+    /** Tool metadata for the workspace.openTool action. Renders live
+     *  host-side; the model only needs kind/title/defaultLocation. */
+    tools: readonly ToolMetadata[]
+    /** Editor metadata for the workspace.openEditor action. Renders live
+     *  host-side; the model needs kind/mimeTypes/singleton/title routing. */
+    editors: readonly AnyEditorMetadata[]
 }
 
 export class Project {
@@ -71,6 +79,7 @@ export class Project {
     readonly textModels: TextModelService
     readonly lsp: LspService
     readonly events: ServerEventsConnection
+    readonly navigation: NavigationService
     private readonly _stopLspBundleEffect: () => void
     private readonly _stopTextModelGC: () => void
 
@@ -93,6 +102,12 @@ export class Project {
             storageKey: `hc-project:${deps.projectId}`,
             initialState: deps.initialLayout,
             actions: this.actions,
+        })
+        this.navigation = new NavigationService({
+            actions: this.actions,
+            layout: this.layout,
+            tools: deps.tools,
+            editors: deps.editors,
         })
         this.pendingFiles = new PendingFilesService()
         this.search = new SearchService({ actions: this.actions })
@@ -182,6 +197,7 @@ export class Project {
         this.languages.dispose()
         this.search.dispose()
         this.pendingFiles.dispose()
+        this.navigation.dispose()
         this.activeEditor.dispose()
         this.layout.dispose()
         this.actions.dispose()

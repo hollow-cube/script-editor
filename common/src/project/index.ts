@@ -20,7 +20,6 @@ export {
     ActionContextMenu,
     NativeMenuBridge,
     useProjectActions,
-    useProjectActionsForLayout,
     type ContextMenuAction,
     type OpenEditorArgs,
     type OpenEditorTarget,
